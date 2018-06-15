@@ -8,12 +8,12 @@ import (
 	"os"
 	"fmt"
 	"encoding/json"
-)
+	)
 
 var FunctionGroups = map[string]func(m *tb.Message){}
 var Functions = map[string]func(m *tb.Message){}
-var AdminCommands = map[string]func(m *tb.Message){}
-var CommandCommands = map[string]func(m *tb.Message){}
+var AdminFunctions = map[string]func(m *tb.Message){}
+var CommandFunctions = map[string]func(m *tb.Message){}
 
 type Path struct {
 	Prompts   []string `json:"prompts`
@@ -63,7 +63,7 @@ func main() {
 			begin(client, b, m, p)
 		}
 	}
-	AdminCommands = map[string]func(m *tb.Message){
+	AdminFunctions = map[string]func(m *tb.Message){
 		"Add Admin": wrapPathBegin(Path{
 			Prompts: []string{"Who would you like to add as an admin?"},
 			Command: "/addAdmin",
@@ -72,30 +72,33 @@ func main() {
 			Prompts: []string{"Who would you like to remove as an admin?"},
 			Command: "/removeAdmin",
 		}),
-		"View Admins": wrapFunction(viewAdmins),
+		"View Admins": wrapFunction(listAdmins),
 	}
-	CommandCommands = map[string]func(m *tb.Message){
+	CommandFunctions = map[string]func(m *tb.Message){
 		"Add Command": wrapPathBegin(Path{
 			Prompts: []string{"What's the name of the command?",
 				"What would you like the response to be? (Markdown formatting is supported)"},
 			Command: "/addCommand",
 		}),
 		"Remove Command": wrapPathBegin(Path{
-			Prompts: []string{"Who would you like to remove as an admin?"},
+			Prompts: []string{"What command would you like to remove?"},
 			Command: "/removeCommand",
 		}),
-		"View Commands": wrapFunction(viewAdmins),
+		"View Commands": wrapFunction(listCommands),
 	}
 	Functions = map[string]func(m *tb.Message){
-		"/addAdmin":          wrapFunction(addAdmin),
-		"/removeAdmin":       wrapFunction(removeAdmin),
-		"/viewAdmins":        wrapFunction(viewAdmins),
-		"/listAdminCommands": wrapFunction(listAdminCommands),
-		"/switchChannel":     wrapFunction(switchChannel),
+		"/addAdmin":           wrapFunction(addAdmin),
+		"/removeAdmin":        wrapFunction(removeAdmin),
+		"/viewAdmins":         wrapFunction(listAdmins),
+		"/listAdminFunctions": wrapFunction(listAdminFunctions),
+		"/switchChannel":      wrapFunction(switchChannel),
+		"/addCommand":         wrapFunction(addCommand),
+		"/removeCommand":      wrapFunction(removeCommand),
+		"/viewCommands":       wrapFunction(listCommands),
 	}
 	FunctionGroups = map[string]func(m *tb.Message){
-		"Manage Commands": wrapFunction(listCommandCommands),
-		"Manage Admins":   wrapFunction(listAdminCommands),
+		"Manage Commands": wrapFunction(listCommandFunctions),
+		"Manage Admins":   wrapFunction(listAdminFunctions),
 		"Switch Channel": wrapPathBegin(Path{
 			Prompts: []string{"Who channel would you like to switch to?"},
 			Command: "/switchChannel",
@@ -111,19 +114,30 @@ func main() {
 		if !m.Private() {
 			return
 		}
-		wrapFunction(listCommandGroups)(m)
+		wrapFunction(listFunctionGroups)(m)
 	})
 
 	b.Handle(tb.OnText, func(m *tb.Message) {
+		// step forward if user has an active path
 		key := fmt.Sprintf("%d:activePath", m.Sender.ID)
 		exists, err := client.Exists(key).Result()
 		if err != nil {
-			log.Printf("error looking up existance of active path for %s", m.Sender.ID)
+			log.Printf("error looking up existence of active path for %s", m.Sender.ID)
 			return
 		}
 		if exists != 0 {
 			step(client, b, m)
 		}
+		// // check if added static command
+		// if strings.HasPrefix(m.Text, "/") {
+		// 	commandName := strings.Split(m.Text, " ")[0]
+		// 	channel, _ := getUsersActiveChannel(client, m.Sender.ID)
+		// 	key := fmt.Sprintf("%s:commands", channel)
+		// 	if commandText, err := client.HGet(key, commandName).Result(); err != redis.Nil {
+		//
+		// 	}
+		// }
+
 	})
 
 	b.Start()
