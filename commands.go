@@ -9,6 +9,18 @@ import (
 	"github.com/go-redis/redis"
 )
 
+func getUsersActivePath(userID int) *Path{
+	key := fmt.Sprintf("user:%d:activePath", userID)
+	pathData, err := R.Get(key).Result()
+	if err != nil {
+		return nil
+	} else {
+		// decode path data into native struct
+		p := Decode([]byte(pathData))
+		return &p
+	}
+}
+
 func begin(m *tb.Message, p Path) {
 	// clear out any existing active path
 	key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
@@ -17,32 +29,14 @@ func begin(m *tb.Message, p Path) {
 		log.Printf("unable to delete active path for %d %s", m.Sender.ID, err)
 		return
 	}
-	// set a new active path with a TTL of a minute
-	err = R.Set(key, &p, time.Minute).Err()
-	if err != nil {
-		log.Printf("unable to set active path for %d %s", m.Sender.ID, err)
-		return
-	}
-	// remove button name from path messasge buiding
+	// remove button name from path messasge building
 	m.Text = ""
 	// take the first step
-	step(m)
+	step(m, &p)
 }
 
-func step(m *tb.Message) {
-	// get active path data
+func step(m *tb.Message, p *Path) error {
 	key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
-	pathData, err := R.Get(key).Result()
-	if err != nil {
-		log.Printf("attempting to prompt but user %d has no active path %s", m.Sender.ID, err)
-		return
-	}
-	// unmarshal path data into native struct
-	var p Path
-	if err := p.UnmarshalBinary([]byte(pathData)); err != nil {
-		log.Printf("Unable to unmarshal data into the new Path struct due to %s", err)
-		return
-	}
 	// if the incoming message has text append it to the list of responses.
 	if m.Text != "" {
 		p.Responses = append(p.Responses, m.Text)
@@ -64,43 +58,44 @@ func step(m *tb.Message) {
 		if err != nil {
 			log.Printf("unable to delete active path for user %d %s", m.Sender.ID, err)
 		}
-		return
+		return nil
 	}
 	// if there is still a prompt in the list, send it, increment the index
 	// and update the saved state data with a reset TTL
 	B.Send(m.Sender, fmt.Sprint(p.Prompts[p.Index]))
 	p.Index += 1
-	R.Set(key, &p, time.Minute)
+	R.Set(key, Encode(*p), time.Minute)
+	return nil
 }
 
 func registerStaticCommand(userID int, name string, text string) (error) {
-	channel, _, _ := getUsersActiveChannel(userID)
-	key := fmt.Sprintf("channel:%s:commands", channel)
+	chat, _, _ := getUsersActiveChat(userID)
+	key := fmt.Sprintf("chat:%d:commands", chat)
 	err := R.HSet(key, name, text).Err()
 	return err
 }
 
 func unregisterStaticCommand(userID int, name string) (error) {
-	chanID, _, _ := getUsersActiveChannel(userID)
-	key := fmt.Sprintf("channel:%s:commands", chanID)
+	chanID, _, _ := getUsersActiveChat(userID)
+	key := fmt.Sprintf("chat:%s:commands", chanID)
 	err := R.HDel(key, name).Err()
 	return err
 }
 
-func getUsersActiveChannel(userID int) (int, string, error) {
-	key := fmt.Sprintf("user:%d:activeChannel", userID)
-	activeChannelID, err := R.Get(key).Int64()
+func getUsersActiveChat(userID int) (int, string, error) {
+	key := fmt.Sprintf("user:%d:activeChat", userID)
+	activeChatID, err := R.Get(key).Int64()
 	if err != nil {
-		log.Printf("userID %d doesn't have an active channel but tried to access it", userID)
+		log.Printf("userID %d doesn't have an active chat but tried to access it", userID)
 		return 0, "", err
 	}
-	key = fmt.Sprintf("channel:%d:title", activeChannelID)
-	var channelName string
-	if channelName, err = R.Get(key).Result(); err != nil {
-		log.Printf("could not access title for channel %s", userID)
+	key = fmt.Sprintf("chat:%d:title", activeChatID)
+	var chatName string
+	if chatName, err = R.Get(key).Result(); err != nil {
+		log.Printf("could not access title for chat %s", userID)
 		return 0, "", err
 	}
-	return int(activeChannelID), channelName, nil
+	return int(activeChatID), chatName, nil
 }
 
 func getReplyKeyboardForCommands(commands []FunctionButton) ([][]tb.ReplyButton) {
@@ -133,7 +128,7 @@ func getInlineButtonForMessages(buttonTexts []string) ([][]tb.InlineButton) {
 	for _, t := range buttonTexts {
 		button := tb.InlineButton{
 			Unique: "",
-			Text: t}
+			Text:   t}
 		B.Handle(&button, t)
 		row = append(row, button)
 	}
@@ -141,29 +136,28 @@ func getInlineButtonForMessages(buttonTexts []string) ([][]tb.InlineButton) {
 	return keys
 }
 
-
-func setUsersActiveChannel(userID int, channelID int64) {
-	key := fmt.Sprintf("user:%d:activeChannel", userID)
-	if err := R.Set(key, channelID, 0).Err(); err != redis.Nil {
+func setUsersActiveChat(userID int, chatID int64) {
+	key := fmt.Sprintf("user:%d:activeChat", userID)
+	if err := R.Set(key, chatID, 0).Err(); err != redis.Nil {
 		log.Printf("%s set to %d", key, userID)
 	} else {
 		log.Printf("failed to set %s to %d ", key, userID)
 	}
 
 }
-func switchChannel(m *tb.Message) {
-	split := strings.Split(strings.Replace(m.Text, "/switchChannel ", "", 1), " ")
-	channelName := split[0]
-	hKey := fmt.Sprintf("user:%d:activeChannel", m.Sender.ID)
-	R.Set(hKey, channelName, 0)
-	B.Send(m.Sender, fmt.Sprintf("switched to managing channel %s", channelName))
+func switchChat(m *tb.Message) {
+	split := strings.Split(strings.Replace(m.Text, "/switchChat ", "", 1), " ")
+	chatName := split[0]
+	hKey := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
+	R.Set(hKey, chatName, 0)
+	B.Send(m.Sender, fmt.Sprintf("switched to managing chat %s", chatName))
 }
 
 func addAdmin(m *tb.Message) {
 	split := strings.Split(strings.Replace(m.Text, "/addAdmin ", "", 1), " ")
 	adminName := split[0]
-	chanID, _, _ := getUsersActiveChannel(m.Sender.ID)
-	setKey := fmt.Sprintf("chanID:%d:admins", chanID)
+	chanID, _, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chanID)
 	R.SAdd(setKey, adminName)
 	val, _ := R.SMembers(setKey).Result()
 	B.Send(m.Sender, fmt.Sprintf("admins now %s", val))
@@ -172,18 +166,18 @@ func addAdmin(m *tb.Message) {
 func removeAdmin(m *tb.Message) {
 	split := strings.Split(strings.Replace(m.Text, "/removeAdmin ", "", 1), " ")
 	adminName := split[0]
-	chanID, chanTitle, _ := getUsersActiveChannel(m.Sender.ID)
-	setKey := fmt.Sprintf("channel:%s:admins", chanID)
+	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chanID)
 	R.SRem(setKey, adminName)
 	val, _ := R.SMembers(setKey).Result()
-	B.Send(m.Sender, fmt.Sprintf("admins for channel %s now %s", chanTitle, val))
+	B.Send(m.Sender, fmt.Sprintf("admins for chat %s now %s", chanTitle, val))
 }
 
 func listAdmins(m *tb.Message) {
-	chanID, chanTitle, _ := getUsersActiveChannel(m.Sender.ID)
-	setKey := fmt.Sprintf("chanID:%s:admins", chanID)
+	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chanID)
 	val, _ := R.SMembers(setKey).Result()
-	B.Send(m.Sender, fmt.Sprintf("admins for channel %s now %s", chanTitle, val))
+	B.Send(m.Sender, fmt.Sprintf("admins for chat %s now %s", chanTitle, val))
 }
 
 func addCommand(m *tb.Message) {
@@ -221,24 +215,24 @@ func removeCommand(m *tb.Message) {
 }
 
 func listCommands(m *tb.Message) {
-	chanID, chanTitle, _ := getUsersActiveChannel(m.Sender.ID)
+	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
 	key := fmt.Sprintf("chanID:%d:commands", chanID)
 	val, _ := R.HKeys(key).Result()
 	B.Send(m.Sender, fmt.Sprintf("commands for chanID %s %s", chanTitle, val))
 }
 
-func addChannel(m *tb.Message) {
+func addChat(m *tb.Message) {
 	link := fmt.Sprintf("https://telegram.me/beru_dev_bot?startgroup=%d", m.Sender.ID)
 	keys := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}
 	button := tb.InlineButton{
 		Unique: "invite_link",
-		Text: "Invite Link",
-		URL: link,
+		Text:   "Invite Link",
+		URL:    link,
 	}
 	row = append(row, button)
 	keys = append(keys, row)
-	B.Send(m.Sender, "Click this button to invite beru to your channel", &tb.ReplyMarkup{
+	B.Send(m.Sender, "Click this button to invite beru to your chat", &tb.ReplyMarkup{
 		InlineKeyboard: keys,
 	})
 }

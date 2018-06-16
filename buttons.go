@@ -2,37 +2,11 @@ package main
 
 import (
 	tb "gopkg.in/tucnak/telebot.v2"
-	"encoding/json"
 )
 
 type FunctionButton struct {
 	Label    string
 	Function func(m *tb.Message)
-}
-
-type Path struct {
-	Prompts   []string `json:"prompts`
-	Command   string   `json:"command"`
-	Index     int      `json:"index"`
-	Responses []string `json:"responses"`
-}
-
-func (p *Path) MarshalBinary() ([]byte, error) {
-	return json.Marshal(&p)
-}
-
-func (p *Path) UnmarshalBinary(data []byte) error {
-	if err := json.Unmarshal(data, &p); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func wrapPathBegin(p Path) func(m *tb.Message) {
-	return func(m *tb.Message) {
-		begin(m, p)
-	}
 }
 
 var FunctionGroups = []FunctionButton{
@@ -45,36 +19,35 @@ var FunctionGroups = []FunctionButton{
 		listAdminFunctions,
 	},
 	{
-		"Manage Channels",
-		listChannelFunctions,
+		"Manage Chats",
+		listChatFunctions,
 	},
 }
 
-
 func listCommandFunctions(m *tb.Message) {
 	B.Send(m.Sender, "Here are the command management commands", &tb.ReplyMarkup{
-		ReplyKeyboard: getReplyKeyboardForCommands(CommandFunctions),
+		ReplyKeyboard:       getReplyKeyboardForCommands(CommandFunctions),
 		ResizeReplyKeyboard: true,
 	})
 }
 
 func listAdminFunctions(m *tb.Message) {
 	B.Send(m.Sender, "Here are the admin management commands", &tb.ReplyMarkup{
-		ReplyKeyboard: getReplyKeyboardForCommands(AdminFunctions),
+		ReplyKeyboard:       getReplyKeyboardForCommands(AdminFunctions),
 		ResizeReplyKeyboard: true,
 	})
 }
 
-func listChannelFunctions(m *tb.Message) {
-	B.Send(m.Sender, "Here are the channel management commands", &tb.ReplyMarkup{
-		ReplyKeyboard: getReplyKeyboardForCommands(ChannelFunctions),
+func listChatFunctions(m *tb.Message) {
+	B.Send(m.Sender, "Here are the chat management commands", &tb.ReplyMarkup{
+		ReplyKeyboard:       getReplyKeyboardForCommands(ChatFunctions),
 		ResizeReplyKeyboard: true,
 	})
 }
 
 func listFunctionGroups(m *tb.Message) {
 	B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
-		ReplyKeyboard: getReplyKeyboardForCommands(FunctionGroups),
+		ReplyKeyboard:       getReplyKeyboardForCommands(FunctionGroups),
 		ResizeReplyKeyboard: true,
 	})
 }
@@ -121,24 +94,24 @@ var CommandFunctions = []FunctionButton{
 		listCommands},
 }
 
-var ChannelFunctions = []FunctionButton{
+var ChatFunctions = []FunctionButton{
 	{
-		"Add Channel",
-		addChannel,
+		"Add Chat",
+		addChat,
 	},
 	{
-		"Remove Channel",
+		"Remove Chat",
 		wrapPathBegin(Path{
-			Prompts: []string{"What channel would you like to beru to stop managing?"},
+			Prompts: []string{"What chat would you like to beru to stop managing?"},
 			Command: "/removeCommand",
 		}),
 	},
 	{
-		"View Channels",
+		"View Chats",
 		listCommands,
 	},
 	{
-		"Switch Channel",
+		"Switch Chat",
 		listCommands,
 	},
 }

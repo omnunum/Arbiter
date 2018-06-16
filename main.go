@@ -7,22 +7,25 @@ import (
 	"time"
 	"log"
 	"fmt"
+	"strings"
 )
 
 /*
 STATE GUIDE
 KEY FORMAT == type:instance:attribute
 
-beru:channels <SET> : channels beru has been invited to
+beru:chats <SET> : chats beru has been invited to
 
-channel:%chatID:admins <SET> : admins for this channel that can access beru admin commands
-channel:%chatID:owner <int> : super user/owner of channel, user that invited beru, can modify
+chat:%chatID:admins <SET> : admins for this chat that can access beru admin commands
+chat:%chatID:owner <int> : super user/owner of chat, user that invited beru, can modify
 	admin set
-channel:%chatID:commands <MAP> : map of command names to static replies
-channel:%chatID:title <string> : name of channel
+chat:%chatID:commands <MAP> : map of command names to static replies
+chat:%chatID:title <string> : name of chat
 
-user:%userID:activeChannel <string> : the channel to which the commands will affect
-user:%userID:nextCommand
+user:%userID:activechat <string> : the chat to which the commands will affect
+user:%userID:activePath <Path> : the user dialogue Path that has been started,
+	but not fully traversed
+user:%userID:chats <SET> : quick lookup to see what chats user is admin/owner of
 */
 
 var R *redis.Client
@@ -36,11 +39,11 @@ func main() {
 		"/removeAdmin":        removeAdmin,
 		"/viewAdmins":         listAdmins,
 		"/listAdminFunctions": listAdminFunctions,
-		"/switchChannel":      switchChannel,
+		"/switchchat":         switchChat,
 		"/addCommand":         addCommand,
 		"/removeCommand":      removeCommand,
 		"/viewCommands":       listCommands,
-		"/addChannel":         addChannel,
+		"/addchat":            addChat,
 	}
 
 	R = redis.NewClient(&redis.Options{
@@ -72,41 +75,43 @@ func main() {
 	})
 
 	B.Handle(tb.OnText, func(m *tb.Message) {
-		// step forward if user has an active path
-		key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
-		exists, err := R.Exists(key).Result()
-		if err != nil {
-			log.Printf("error looking up existence of active path for %s", m.Sender.ID)
-			return
-		}
-		if exists != 0 {
-			step(m)
+		if p := getUsersActivePath(m.Sender.ID); p != nil {
+			step(m, p)
 		}
 		// check if added static command
-		// if strings.HasPrefix(m.Text, "/") {
-		// 	commandName := strings.Split(m.Text, " ")[0]
-		// 	var channel string
-		// 	if m.Private() {
-		// 		channel, _ = getUsersActiveChannel(m.Sender.ID)
-		// 	} else {
-		// 		channel = m.Chat.ID
-		// 	}
-		// 	key := fmt.Sprintf("%s:commands", channel)
-		// 	if commandText, err := R.HGet(key, commandName).Result(); err != redis.Nil {
-		//
-		// 	}
-		// }
+		if strings.HasPrefix(m.Text, "/") {
+			commandName := strings.Split(m.Text, " ")[0]
+			var chat int
+			var dest tb.Recipient
+			if m.Private() {
+				chat, _, _ = getUsersActiveChat(m.Sender.ID)
+				dest = m.Sender
+			} else {
+				chat = int(m.Chat.ID)
+				dest = m.Chat
+			}
+			key := fmt.Sprintf("chat:%d:commands", chat)
+			if commandText, err := R.HGet(key, commandName).Result(); err != redis.Nil {
+				B.Send(dest, commandText)
+			}
+		}
 
 	})
 
 	B.Handle(tb.OnAddedToGroup, func(m *tb.Message) {
-		R.SAdd("beru:channels", m.Chat.ID)
-		R.SAdd(fmt.Sprintf("channel:%d:admins", m.Chat.ID), m.Sender.ID)
-		R.Set(fmt.Sprintf("channel:%d:owner", m.Chat.ID), m.Sender.ID, 0)
-		R.Set(fmt.Sprintf("channel:%d:title", m.Chat.ID), m.Chat.Title, 0)
-		log.Printf("beru joined channel %s (%d) invited by %s (%d)",
+		// add chat to list of chats beru has been added to
+		R.SAdd("beru:chats", m.Chat.ID)
+		// enables a quick check that user can admin chat
+		R.SAdd(fmt.Sprintf("user:%d:chats", m.Sender.ID), m.Chat.ID)
+		// add user to chats admin list
+		R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), m.Sender.ID)
+		// since this is the inviter, add this user as the owner of the chat
+		R.Set(fmt.Sprintf("chat:%d:owner", m.Chat.ID), m.Sender.ID, 0)
+		// save the title so we can display this lto humans
+		R.Set(fmt.Sprintf("chat:%d:title", m.Chat.ID), m.Chat.Title, 0)
+		log.Printf("beru joined chat %s (%d) invited by %s (%d)",
 			m.Chat.Title, m.Chat.ID, m.Sender.Username, m.Sender.ID)
-		setUsersActiveChannel(m.Sender.ID, m.Chat.ID)
+		setUsersActiveChat(m.Sender.ID, m.Chat.ID)
 	})
 
 	B.Start()
