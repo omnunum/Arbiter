@@ -5,81 +5,15 @@ import (
 	"strings"
 	"fmt"
 	tb "gopkg.in/tucnak/telebot.v2"
-	"time"
 	"github.com/go-redis/redis"
 )
 
-func getUsersActivePath(userID int) *Path{
-	key := fmt.Sprintf("user:%d:activePath", userID)
-	pathData, err := R.Get(key).Result()
-	if err != nil {
-		return nil
-	} else {
-		// decode path data into native struct
-		p := Decode([]byte(pathData))
-		return &p
+func userHasAdminManagementAccess(userID int, chatID int) (bool, error) {
+	owner, err := R.Get(fmt.Sprintf("chat:%d:owner", chatID)).Int64()
+	if err != redis.Nil{
+		return int(owner) == userID, nil
 	}
-}
-
-func begin(m *tb.Message, p Path) {
-	// clear out any existing active path
-	key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
-	err := R.Del(key).Err()
-	if err != nil {
-		log.Printf("unable to delete active path for %d %s", m.Sender.ID, err)
-		return
-	}
-	// remove button name from path messasge building
-	m.Text = ""
-	// take the first step
-	step(m, &p)
-}
-
-func step(m *tb.Message, p *Path) error {
-	key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
-	// if the incoming message has text append it to the list of responses.
-	if m.Text != "" {
-		p.Responses = append(p.Responses, m.Text)
-	}
-	// if all of the prompts have been sent to the user call the function
-	// at the end of the path, and pass in the responses joined by a semicolon
-	if p.Index == len(p.Prompts) {
-		m.Text = strings.Join(p.Responses, ";")
-		log.Printf("reached the end of the path, calling %s with text %s", p.Command, m.Text)
-		// grab function from map of telegram command names to their respsective
-		// native go functions
-		if f, ok := Functions[p.Command]; ok {
-			f(m)
-		} else {
-			log.Printf("function %s cannot be found", p.Command)
-		}
-		// delete the path state since it has been fully traversed
-		_, err := R.Del(key).Result()
-		if err != nil {
-			log.Printf("unable to delete active path for user %d %s", m.Sender.ID, err)
-		}
-		return nil
-	}
-	// if there is still a prompt in the list, send it, increment the index
-	// and update the saved state data with a reset TTL
-	B.Send(m.Sender, fmt.Sprint(p.Prompts[p.Index]))
-	p.Index += 1
-	R.Set(key, Encode(*p), time.Minute)
-	return nil
-}
-
-func registerStaticCommand(userID int, name string, text string) (error) {
-	chat, _, _ := getUsersActiveChat(userID)
-	key := fmt.Sprintf("chat:%d:commands", chat)
-	err := R.HSet(key, name, text).Err()
-	return err
-}
-
-func unregisterStaticCommand(userID int, name string) (error) {
-	chanID, _, _ := getUsersActiveChat(userID)
-	key := fmt.Sprintf("chat:%s:commands", chanID)
-	err := R.HDel(key, name).Err()
-	return err
+	return false, err
 }
 
 func getUsersActiveChat(userID int) (int, string, error) {
@@ -92,7 +26,7 @@ func getUsersActiveChat(userID int) (int, string, error) {
 	key = fmt.Sprintf("chat:%d:title", activeChatID)
 	var chatName string
 	if chatName, err = R.Get(key).Result(); err != nil {
-		log.Printf("could not access title for chat %s", userID)
+		log.Printf("could not access title for chat %d", activeChatID)
 		return 0, "", err
 	}
 	return int(activeChatID), chatName, nil
@@ -145,7 +79,8 @@ func setUsersActiveChat(userID int, chatID int64) {
 	}
 
 }
-func switchChat(m *tb.Message) {
+func switchChat(ms []*tb.Message) {
+	m := ms[0]
 	split := strings.Split(strings.Replace(m.Text, "/switchChat ", "", 1), " ")
 	chatName := split[0]
 	hKey := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
@@ -153,54 +88,58 @@ func switchChat(m *tb.Message) {
 	B.Send(m.Sender, fmt.Sprintf("switched to managing chat %s", chatName))
 }
 
-func addAdmin(m *tb.Message) {
+func addAdmin(ms []*tb.Message) {
+	m := ms[0]
 	split := strings.Split(strings.Replace(m.Text, "/addAdmin ", "", 1), " ")
 	adminName := split[0]
-	chanID, _, _ := getUsersActiveChat(m.Sender.ID)
-	setKey := fmt.Sprintf("chat:%d:admins", chanID)
+	chatID, _, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chatID)
 	R.SAdd(setKey, adminName)
 	val, _ := R.SMembers(setKey).Result()
 	B.Send(m.Sender, fmt.Sprintf("admins now %s", val))
 }
 
-func removeAdmin(m *tb.Message) {
+func removeAdmin(ms []*tb.Message) {
+	m := ms[0]
 	split := strings.Split(strings.Replace(m.Text, "/removeAdmin ", "", 1), " ")
 	adminName := split[0]
-	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
-	setKey := fmt.Sprintf("chat:%d:admins", chanID)
+	chatID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chatID)
 	R.SRem(setKey, adminName)
 	val, _ := R.SMembers(setKey).Result()
 	B.Send(m.Sender, fmt.Sprintf("admins for chat %s now %s", chanTitle, val))
 }
 
-func listAdmins(m *tb.Message) {
-	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
-	setKey := fmt.Sprintf("chat:%d:admins", chanID)
+func viewAdmins(ms []*tb.Message) {
+	m := ms[0]
+	chatID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
+	setKey := fmt.Sprintf("chat:%d:admins", chatID)
 	val, _ := R.SMembers(setKey).Result()
 	B.Send(m.Sender, fmt.Sprintf("admins for chat %s now %s", chanTitle, val))
 }
 
-func addCommand(m *tb.Message) {
-	log.Printf("entered addCommand with msg %s", m.Text)
-	split := strings.Split(strings.Replace(m.Text, "/addCommand ", "", 1), ";")
-	commandName := split[0]
+func addCommand(ms []*tb.Message) {
+	sender := ms[0].Sender
+	commandName := ms[0].Text
 	if ! strings.HasPrefix(commandName, "/") {
 		commandName = "/" + commandName
 	}
-	commandText := split[1]
-	if len(split) == 1 {
-		B.Send(m.Sender, fmt.Sprint(
+	commandText := ms[1].Text
+	log.Printf("entered addCommand with msg %s;%s", commandName, commandText)
+	if len(ms) == 1 {
+		B.Send(sender, fmt.Sprint(
 			"you need to specify a command and response to add, such as /addCommand commandName;response text"))
 	}
-	if err := registerStaticCommand(m.Sender.ID, commandName, commandText); err != nil {
+	if err := registerStaticCommand(sender.ID, commandName, commandText); err != nil {
 		msg := fmt.Sprintf("error while trying to add command %s", commandName)
-		B.Send(m.Sender, msg)
+		B.Send(sender, msg)
 		log.Printf(fmt.Sprintf("%s: %s"), msg, err)
 	}
-	B.Send(m.Sender, fmt.Sprintf("added/updated command %s", commandName))
+	B.Send(sender, fmt.Sprintf("added/updated command %s", commandName))
 }
 
-func removeCommand(m *tb.Message) {
+func removeCommand(ms []*tb.Message) {
+	m := ms[0]
 	log.Printf("entered removeCommand with msg %s", m.Text)
 	commandName := strings.Replace(m.Text, "/removeCommand ", "", 1)
 	if ! strings.HasPrefix(commandName, "/") {
@@ -214,14 +153,31 @@ func removeCommand(m *tb.Message) {
 	B.Send(m.Sender, fmt.Sprintf("removed command %s", commandName))
 }
 
-func listCommands(m *tb.Message) {
+func viewCommands(ms []*tb.Message) {
+	m := ms[0]
 	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
-	key := fmt.Sprintf("chanID:%d:commands", chanID)
+	key := fmt.Sprintf("chat:%d:commandss", chanID)
 	val, _ := R.HKeys(key).Result()
 	B.Send(m.Sender, fmt.Sprintf("commands for chanID %s %s", chanTitle, val))
 }
 
-func addChat(m *tb.Message) {
+func registerStaticCommand(userID int, name string, text string) (error) {
+	chat, _, _ := getUsersActiveChat(userID)
+	key := fmt.Sprintf("chat:%d:commands", chat)
+	err := R.HSet(key, name, text).Err()
+	return err
+}
+
+func unregisterStaticCommand(userID int, name string) (error) {
+	chanID, _, _ := getUsersActiveChat(userID)
+	key := fmt.Sprintf("chat:%s:commands", chanID)
+	err := R.HDel(key, name).Err()
+	return err
+}
+
+
+func addChat(ms []*tb.Message) {
+	m := ms[0]
 	link := fmt.Sprintf("https://telegram.me/beru_dev_bot?startgroup=%d", m.Sender.ID)
 	keys := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}

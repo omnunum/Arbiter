@@ -6,21 +6,26 @@ import (
 
 type FunctionButton struct {
 	Label    string
-	Function func(m *tb.Message)
+	Function func(*tb.Message)
 }
 
+func wrapSingleMessage(f func([]*tb.Message)) func(*tb.Message) {
+	return func(m *tb.Message) {
+		f([]*tb.Message{m})
+	}
+}
 var FunctionGroups = []FunctionButton{
 	{
 		"Manage Commands",
 		listCommandFunctions,
 	},
 	{
-		"Manage Admins",
-		listAdminFunctions,
-	},
-	{
 		"Manage Chats",
 		listChatFunctions,
+	},
+	{
+		"Manage Admins",
+		listAdminFunctions,
 	},
 }
 
@@ -46,30 +51,51 @@ func listChatFunctions(m *tb.Message) {
 }
 
 func listFunctionGroups(m *tb.Message) {
-	B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
-		ReplyKeyboard:       getReplyKeyboardForCommands(FunctionGroups),
-		ResizeReplyKeyboard: true,
-	})
+	chatID, _, _ := getUsersActiveChat(m.Sender.ID)
+	buttons := getReplyKeyboardForCommands(FunctionGroups)
+	// if the user is a chat owner
+	if access, err := userHasAdminManagementAccess(m.Sender.ID, chatID); access {
+		B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
+			ReplyKeyboard:       buttons,
+			ResizeReplyKeyboard: true,
+		})
+	// if the user isn't an owner
+	} else if !access && err == nil {
+		// remove last element (admin buttons)
+		buttons = buttons[:len(buttons)-1]
+		B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
+			ReplyKeyboard:       buttons,
+			ResizeReplyKeyboard: true,
+		})
+	// if there isn't even an active chat for this user
+	} else if err != nil {
+		B.Send(m.Sender, "I need to be invited to a chat before I can be useful")
+		addChat([]*tb.Message{m})
+	}
 }
 
 var AdminFunctions = []FunctionButton{
 	{
 		"Add Admin",
 		wrapPathBegin(Path{
-			Prompts: []string{"Who would you like to add as an admin?"},
-			Command: "/addAdmin",
+			Prompts: []Prompt{
+				{Text: "Who would you like to add as an admin?"},
+			},
+			Consumer: "/addadmin",
 		}),
 	},
 	{
 		"Remove Admin",
 		wrapPathBegin(Path{
-			Prompts: []string{"Who would you like to remove as an admin?"},
-			Command: "/removeAdmin",
+			Prompts: []Prompt{
+				{Text: "Who would you like to remove as an admin?"},
+			},
+			Consumer: "/removeadmin",
 		}),
 	},
 	{
 		"View Admins",
-		listAdmins,
+		wrapSingleMessage(viewAdmins),
 	},
 }
 
@@ -77,41 +103,47 @@ var CommandFunctions = []FunctionButton{
 	{
 		"Add Command",
 		wrapPathBegin(Path{
-			Prompts: []string{"What's the name of the command?",
-				"What would you like the response to be? (Markdown formatting is supported)"},
-			Command: "/addCommand",
+			Prompts: []Prompt{
+				{Text: "What's the name of the command?",},
+				{Text: "What would you like the response to be? (Markdown formatting is supported)",},
+			},
+			Consumer: "/addcommand",
 		}),
 	},
 	{
 		"Remove Command",
 		wrapPathBegin(Path{
-			Prompts: []string{"What command would you like to remove?"},
-			Command: "/removeCommand",
+			Prompts: []Prompt{
+				{Text: "What command would you like to remove?"},
+			},
+			Consumer: "/removecommand",
 		}),
 	},
 	{
 		"View Commands",
-		listCommands},
+		wrapSingleMessage(viewCommands)},
 }
 
 var ChatFunctions = []FunctionButton{
 	{
 		"Add Chat",
-		addChat,
+		wrapSingleMessage(addChat),
 	},
 	{
 		"Remove Chat",
 		wrapPathBegin(Path{
-			Prompts: []string{"What chat would you like to beru to stop managing?"},
-			Command: "/removeCommand",
+			Prompts: []Prompt{
+				{Text: "What chat would you like to beru to stop managing?"},
+			},
+			Consumer: "/removecommand",
 		}),
 	},
 	{
 		"View Chats",
-		listCommands,
+		wrapSingleMessage(viewCommands),
 	},
 	{
 		"Switch Chat",
-		listCommands,
+		wrapSingleMessage(viewCommands),
 	},
 }

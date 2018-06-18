@@ -31,19 +31,39 @@ user:%userID:chats <SET> : quick lookup to see what chats user is admin/owner of
 var R *redis.Client
 var B *tb.Bot
 
-var Functions map[string]func(m *tb.Message)
+var Consumers map[string]func([]*tb.Message)
 
+var helpGuide = `
+Nice you meet you, my name is Beru!
+
+I can help you create and manage Telegram chats.
+
+You can control me by sending these commands:
+
+*Chat Owner Only*
+/addadmin - allows another user to change the chat rules
+/removeadmin - removes a users ability to change chat rules
+/viewadmins - displays list of users with admin privileges
+
+*Chat Level Functionality*
+/switchchat - changes which chat beru is managing when a user is an owner/admin of multiple chats
+/addchat - shortcut to invite link to add beru to your chat
+
+*Custom Commands*
+/addcommand - adds a custom command and response 
+/removecommand - removes a custom command
+/viewcommands - prints a list of custom commands
+`
 func main() {
-	Functions = map[string]func(m *tb.Message){
-		"/addAdmin":           addAdmin,
-		"/removeAdmin":        removeAdmin,
-		"/viewAdmins":         listAdmins,
-		"/listAdminFunctions": listAdminFunctions,
-		"/switchchat":         switchChat,
-		"/addCommand":         addCommand,
-		"/removeCommand":      removeCommand,
-		"/viewCommands":       listCommands,
+	Consumers = map[string]func([]*tb.Message){
+		"/addadmin":           addAdmin,
+		"/removeadmin":        removeAdmin,
+		"/viewadmins":         viewAdmins,
 		"/addchat":            addChat,
+		"/switchchat":         switchChat,
+		"/addcommand":         addCommand,
+		"/removecommand":      removeCommand,
+		"/viewcommands":       viewCommands,
 	}
 
 	R = redis.NewClient(&redis.Options{
@@ -56,15 +76,14 @@ func main() {
 		Token:  os.Getenv("TELEBOT_SECRET"),
 		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 	})
-
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 
-	for k, v := range Functions {
-		B.Handle(k, v)
-	}
+	// for k, v := range Consumers {
+	// 	B.Handle(k, v)
+	// }
 
 	// Command: /start <PAYLOAD>
 	B.Handle("/start", func(m *tb.Message) {
@@ -72,6 +91,14 @@ func main() {
 			return
 		}
 		listFunctionGroups(m)
+	})
+
+	// Command: /start <PAYLOAD>
+	B.Handle("/help", func(m *tb.Message) {
+		if !m.Private() {
+			return
+		}
+		B.Send(m.Sender, helpGuide, tb.ParseMode(tb.ModeMarkdown))
 	})
 
 	B.Handle(tb.OnText, func(m *tb.Message) {
