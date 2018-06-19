@@ -1,12 +1,11 @@
 package main
 
 import (
-	"log"
-	"strings"
+		"strings"
 	"fmt"
 	tb "gopkg.in/tucnak/telebot.v2"
 	"github.com/go-redis/redis"
-)
+	)
 
 func userHasAdminManagementAccess(userID int, chatID int) (bool, error) {
 	owner, err := R.Get(fmt.Sprintf("chat:%d:owner", chatID)).Int64()
@@ -20,16 +19,21 @@ func getUsersActiveChat(userID int) (int, string, error) {
 	key := fmt.Sprintf("user:%d:activeChat", userID)
 	activeChatID, err := R.Get(key).Int64()
 	if err != nil {
-		log.Printf("userID %d doesn't have an active chat but tried to access it", userID)
+		LogE.Printf("userID %d doesn't have an active chat but tried to access it", userID)
 		return 0, "", err
 	}
-	key = fmt.Sprintf("chat:%d:title", activeChatID)
-	var chatName string
-	if chatName, err = R.Get(key).Result(); err != nil {
-		log.Printf("could not access title for chat %d", activeChatID)
-		return 0, "", err
-	}
+	chatName, err := getChatTitle(int(activeChatID))
 	return int(activeChatID), chatName, nil
+}
+
+func getChatTitle(chatID int) (string, error) {
+	key := fmt.Sprintf("chat:%d:title", chatID)
+	if title, err := R.Get(key).Result(); err == redis.Nil {
+		LogE.Printf("could not access title for chat %d", chatID)
+		return "", err
+	} else {
+		return title, nil
+	}
 }
 
 func getReplyKeyboardForCommands(commands []FunctionButton) ([][]tb.ReplyButton) {
@@ -70,24 +74,6 @@ func getInlineButtonForMessages(buttonTexts []string) ([][]tb.InlineButton) {
 	return keys
 }
 
-func setUsersActiveChat(userID int, chatID int64) {
-	key := fmt.Sprintf("user:%d:activeChat", userID)
-	if err := R.Set(key, chatID, 0).Err(); err != redis.Nil {
-		log.Printf("%s set to %d", key, userID)
-	} else {
-		log.Printf("failed to set %s to %d ", key, userID)
-	}
-
-}
-func switchChat(ms []*tb.Message) {
-	m := ms[0]
-	split := strings.Split(strings.Replace(m.Text, "/switchChat ", "", 1), " ")
-	chatName := split[0]
-	hKey := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
-	R.Set(hKey, chatName, 0)
-	B.Send(m.Sender, fmt.Sprintf("switched to managing chat %s", chatName))
-}
-
 func addAdmin(ms []*tb.Message) {
 	m := ms[0]
 	split := strings.Split(strings.Replace(m.Text, "/addAdmin ", "", 1), " ")
@@ -125,7 +111,7 @@ func addCommand(ms []*tb.Message) {
 		commandName = "/" + commandName
 	}
 	commandText := ms[1].Text
-	log.Printf("entered addCommand with msg %s;%s", commandName, commandText)
+	LogI.Printf("entered addCommand with msgs [%s %s]", commandName, commandText)
 	if len(ms) == 1 {
 		B.Send(sender, fmt.Sprint(
 			"you need to specify a command and response to add, such as /addCommand commandName;response text"))
@@ -133,14 +119,14 @@ func addCommand(ms []*tb.Message) {
 	if err := registerStaticCommand(sender.ID, commandName, commandText); err != nil {
 		msg := fmt.Sprintf("error while trying to add command %s", commandName)
 		B.Send(sender, msg)
-		log.Printf(fmt.Sprintf("%s: %s"), msg, err)
+		LogE.Printf(fmt.Sprintf("%s: %s"), msg, err)
 	}
 	B.Send(sender, fmt.Sprintf("added/updated command %s", commandName))
 }
 
 func removeCommand(ms []*tb.Message) {
 	m := ms[0]
-	log.Printf("entered removeCommand with msg %s", m.Text)
+	LogI.Printf("entered removeCommand with msg %s", m.Text)
 	commandName := strings.Replace(m.Text, "/removeCommand ", "", 1)
 	if ! strings.HasPrefix(commandName, "/") {
 		commandName = "/" + commandName
@@ -148,7 +134,7 @@ func removeCommand(ms []*tb.Message) {
 	if err := unregisterStaticCommand(m.Sender.ID, commandName); err != nil {
 		msg := fmt.Sprintf("error while trying to remove command %s", commandName)
 		B.Send(m.Sender, msg)
-		log.Printf(fmt.Sprintf("%s: %s"), msg, err)
+		LogE.Printf(fmt.Sprintf("%s: %s"), msg, err)
 	}
 	B.Send(m.Sender, fmt.Sprintf("removed command %s", commandName))
 }
@@ -156,9 +142,9 @@ func removeCommand(ms []*tb.Message) {
 func viewCommands(ms []*tb.Message) {
 	m := ms[0]
 	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
-	key := fmt.Sprintf("chat:%d:commandss", chanID)
+	key := fmt.Sprintf("chat:%d:commands", chanID)
 	val, _ := R.HKeys(key).Result()
-	B.Send(m.Sender, fmt.Sprintf("commands for chanID %s %s", chanTitle, val))
+	B.Send(m.Sender, fmt.Sprintf("commands for %s %s", chanTitle, val))
 }
 
 func registerStaticCommand(userID int, name string, text string) (error) {
@@ -170,11 +156,10 @@ func registerStaticCommand(userID int, name string, text string) (error) {
 
 func unregisterStaticCommand(userID int, name string) (error) {
 	chanID, _, _ := getUsersActiveChat(userID)
-	key := fmt.Sprintf("chat:%s:commands", chanID)
+	key := fmt.Sprintf("chat:%d:commands", chanID)
 	err := R.HDel(key, name).Err()
 	return err
 }
-
 
 func addChat(ms []*tb.Message) {
 	m := ms[0]
@@ -192,3 +177,29 @@ func addChat(ms []*tb.Message) {
 		InlineKeyboard: keys,
 	})
 }
+
+func setUsersActiveChat(userID int, chatID int64) {
+	key := fmt.Sprintf("user:%d:activeChat", userID)
+	if err := R.Set(key, chatID, 0).Err(); err != nil {
+		LogE.Printf("failed to set %s to %d ", key, userID)
+	} else {
+		LogI.Printf("%s set to %d", key, userID)
+	}
+
+}
+
+func switchChat(ms []*tb.Message) {
+	m := ms[0]
+	split := strings.Split(strings.Replace(m.Text, "/switchChat ", "", 1), " ")
+	chatID := split[0]
+	key := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
+	R.Set(key, chatID, 0)
+	key = fmt.Sprintf("chat:%s:title", chatID)
+	if chatName, err := R.Get(key).Result(); err == redis.Nil {
+		LogE.Printf("failed to lookup title for chat %d", chatID)
+	} else {
+		B.Send(m.Sender, fmt.Sprintf("switched to managing chat %s", chatName))
+	}
+}
+
+

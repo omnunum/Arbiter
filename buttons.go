@@ -2,7 +2,7 @@ package main
 
 import (
 	tb "gopkg.in/tucnak/telebot.v2"
-)
+	)
 
 type FunctionButton struct {
 	Label    string
@@ -14,6 +14,7 @@ func wrapSingleMessage(f func([]*tb.Message)) func(*tb.Message) {
 		f([]*tb.Message{m})
 	}
 }
+
 var FunctionGroups = []FunctionButton{
 	{
 		"Manage Commands",
@@ -52,6 +53,7 @@ func listChatFunctions(m *tb.Message) {
 
 func listFunctionGroups(m *tb.Message) {
 	chatID, _, _ := getUsersActiveChat(m.Sender.ID)
+
 	buttons := getReplyKeyboardForCommands(FunctionGroups)
 	// if the user is a chat owner
 	if access, err := userHasAdminManagementAccess(m.Sender.ID, chatID); access {
@@ -59,7 +61,7 @@ func listFunctionGroups(m *tb.Message) {
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
 		})
-	// if the user isn't an owner
+		// if the user isn't an owner
 	} else if !access && err == nil {
 		// remove last element (admin buttons)
 		buttons = buttons[:len(buttons)-1]
@@ -67,10 +69,6 @@ func listFunctionGroups(m *tb.Message) {
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
 		})
-	// if there isn't even an active chat for this user
-	} else if err != nil {
-		B.Send(m.Sender, "I need to be invited to a chat before I can be useful")
-		addChat([]*tb.Message{m})
 	}
 }
 
@@ -139,11 +137,14 @@ var ChatFunctions = []FunctionButton{
 		}),
 	},
 	{
-		"View Chats",
-		wrapSingleMessage(viewCommands),
-	},
-	{
 		"Switch Chat",
-		wrapSingleMessage(viewCommands),
+		wrapPathBegin(Path{
+			Prompts: []Prompt{
+				{
+					GenerateMessage: "SwitchChatPrompt",
+					Text:            "What chat would you like to manage?",
+				},
+			},
+		}),
 	},
 }

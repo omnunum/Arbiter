@@ -2,12 +2,9 @@ package main
 
 import (
 	tb "gopkg.in/tucnak/telebot.v2"
-	"encoding/gob"
-	"bytes"
-	"log"
-	"fmt"
+				"fmt"
 	"time"
-)
+	)
 
 type Path struct {
 	// chain of text and keyboards to promp user with
@@ -21,16 +18,17 @@ type Path struct {
 	// the list of responses after all prompts have been sent to user
 	Consumer string
 }
-type Processor func(*tb.Message) *tb.Message
+
+type Processor func(*tb.Message, *Prompt) *tb.Message
 
 var Processors = map[string]Processor {
 
 }
 
-type Generator func(interface{})
+type Generator func(*tb.Message, *Prompt)
 
 var Generators = map[string]Generator {
-
+	"SwitchChatPrompt": SwitchChatPrompt,
 }
 
 type Prompt struct {
@@ -47,27 +45,9 @@ type Prompt struct {
 	ProcessResponse string
 }
 
-func Encode(p Path) []byte {
-	var by bytes.Buffer
-	enc := gob.NewEncoder(&by)
-	if err := enc.Encode(p); err != nil {
-		log.Printf("could not gob encode path with prompt %s", p.Prompts[0])
-		panic(err)
-	}
-	data := by.Bytes()
-	return data
-}
-
-func Decode(data []byte) Path {
-	var by bytes.Buffer
-	by.Write(data)
-	dec := gob.NewDecoder(&by)
-	p := Path{}
-	if err := dec.Decode(&p); err != nil {
-		log.Printf("Unable to decode data into the new Path struct due to %s", err)
-		panic(err)
-	}
-	return p
+// standard prompt when an error occurs
+var ErrorPrompt = Prompt{
+	Text: ErrorResponse,
 }
 
 func wrapPathBegin(p Path) func(ms *tb.Message) {
@@ -90,7 +70,7 @@ func getUsersActivePath(userID int) *Path {
 		return nil
 	} else {
 		// decode path data into native struct
-		p := Decode([]byte(pathData))
+		p := DecodePath([]byte(pathData))
 		return &p
 	}
 }
@@ -100,10 +80,10 @@ func begin(m *tb.Message, p Path) {
 	key := fmt.Sprintf("user:%d:activePath", m.Sender.ID)
 	err := R.Del(key).Err()
 	if err != nil {
-		log.Printf("unable to delete active path for %d %s", m.Sender.ID, err)
+		LogE.Printf("unable to delete active path for %d %s", m.Sender.ID, err)
 		return
 	}
-	// remove button name from path messasge building
+	// remove button name from path message building
 	m.Text = ""
 	// take the first step
 	step(m, &p)
@@ -118,16 +98,18 @@ func step(m *tb.Message, p *Path) error {
 	// if all of the prompts have been sent to the user call the function
 	// at the end of the path, and pass in the responses joined by a semicolon
 	if p.Index == len(p.Prompts) {
-		log.Print("reached the end of the path")
-		if consumer, ok := Consumers[p.Consumer]; !ok {
-			log.Printf("consumer not found in registry: %s", p.Consumer)
-		} else {
-			consumer(p.Responses)
+		LogI.Print("reached the end of the path")
+		if p.Consumer != "" {
+			if consumer, ok := Consumers[p.Consumer]; !ok {
+				LogE.Printf("consumer not found in registry: %s", p.Consumer)
+			} else {
+				consumer(p.Responses)
+			}
 		}
 		// delete the path state since it has been fully traversed
-		_, err := R.Del(key).Result()
+		err := R.Del(key).Err()
 		if err != nil {
-			log.Printf("unable to delete active path for user %d %s", m.Sender.ID, err)
+			LogE.Printf("unable to delete active path for user %d %s", m.Sender.ID, err)
 		}
 		return nil
 	}
@@ -135,7 +117,7 @@ func step(m *tb.Message, p *Path) error {
 	// if there is still a prompt in the list, send it, increment the index
 	// and update the saved state data with a reset TTL
 	if pr.GenerateMessage != "" {
-		Generators[pr.GenerateMessage](m)
+		Generators[pr.GenerateMessage](m, &pr)
 	}
 	if m.Private() {
 		B.Send(m.Sender, pr.Text, &pr.Reply)
@@ -143,6 +125,6 @@ func step(m *tb.Message, p *Path) error {
 		B.Send(m.Chat, pr.Text, &pr.Reply)
 	}
 	p.Index += 1
-	R.Set(key, Encode(*p), time.Minute)
+	R.Set(key, EncodePath(p), time.Minute)
 	return nil
 }

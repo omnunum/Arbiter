@@ -8,6 +8,9 @@ import (
 	"log"
 	"fmt"
 	"strings"
+	"encoding/gob"
+	"text/template"
+	bytes2 "bytes"
 )
 
 /*
@@ -33,6 +36,8 @@ var B *tb.Bot
 
 var Consumers map[string]func([]*tb.Message)
 
+const ErrorResponse string = "Something went wrong and I wasn't able to fulfill that request"
+
 var helpGuide = `
 Nice you meet you, my name is Beru!
 
@@ -54,16 +59,19 @@ You can control me by sending these commands:
 /removecommand - removes a custom command
 /viewcommands - prints a list of custom commands
 `
+
 func main() {
+	gob.Register(Path{})
+	gob.Register(Prompt{})
 	Consumers = map[string]func([]*tb.Message){
-		"/addadmin":           addAdmin,
-		"/removeadmin":        removeAdmin,
-		"/viewadmins":         viewAdmins,
-		"/addchat":            addChat,
-		"/switchchat":         switchChat,
-		"/addcommand":         addCommand,
-		"/removecommand":      removeCommand,
-		"/viewcommands":       viewCommands,
+		"/addadmin":      addAdmin,
+		"/removeadmin":   removeAdmin,
+		"/viewadmins":    viewAdmins,
+		"/addchat":       addChat,
+		"/switchchat":    switchChat,
+		"/addcommand":    addCommand,
+		"/removecommand": removeCommand,
+		"/viewcommands":  viewCommands,
 	}
 
 	R = redis.NewClient(&redis.Options{
@@ -90,7 +98,14 @@ func main() {
 		if !m.Private() {
 			return
 		}
-		listFunctionGroups(m)
+		// if there isn't an active chat for this user
+		key := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
+		if exists := R.Exists(key).Val(); exists == 0 {
+			B.Send(m.Sender, "I need to be invited to a chat before I can be useful")
+			addChat([]*tb.Message{m})
+		} else {
+			listFunctionGroups(m)
+		}
 	})
 
 	// Command: /start <PAYLOAD>
@@ -119,7 +134,13 @@ func main() {
 			}
 			key := fmt.Sprintf("chat:%d:commands", chat)
 			if commandText, err := R.HGet(key, commandName).Result(); err != redis.Nil {
-				B.Send(dest, commandText)
+				t, _ := template.New("command").Parse(commandText)
+				by := bytes2.Buffer{}
+				if err := t.Execute(&by, m); err != nil {
+					B.Send(dest, ErrorResponse)
+				} else {
+					B.Send(dest, by.String())
+				}
 			}
 		}
 
@@ -130,15 +151,22 @@ func main() {
 		R.SAdd("beru:chats", m.Chat.ID)
 		// enables a quick check that user can admin chat
 		R.SAdd(fmt.Sprintf("user:%d:chats", m.Sender.ID), m.Chat.ID)
+		// save the full user info if we need it later
+		R.Set(fmt.Sprintf("user:%d:info", m.Sender.ID), EncodeUser(m.Sender), 0)
 		// add user to chats admin list
 		R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), m.Sender.ID)
 		// since this is the inviter, add this user as the owner of the chat
 		R.Set(fmt.Sprintf("chat:%d:owner", m.Chat.ID), m.Sender.ID, 0)
-		// save the title so we can display this lto humans
+		// save the chat title so we can display it to the user
 		R.Set(fmt.Sprintf("chat:%d:title", m.Chat.ID), m.Chat.Title, 0)
-		log.Printf("beru joined chat %s (%d) invited by %s (%d)",
+		// save the full chat info if we need it later
+		R.Set(fmt.Sprintf("chat:%d:info", m.Chat.ID), EncodeChat(m.Chat), 0)
+
+		LogI.Printf("beru joined chat %s (%d) invited by %s (%d)",
 			m.Chat.Title, m.Chat.ID, m.Sender.Username, m.Sender.ID)
+		B.Send(m.Sender, fmt.Sprintf("beru joined chat %s", m.Chat.Title))
 		setUsersActiveChat(m.Sender.ID, m.Chat.ID)
+
 	})
 
 	B.Start()
