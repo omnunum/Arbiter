@@ -16,7 +16,7 @@ type Path struct {
 	Responses []*tb.Message
 	// reference to function registry value that consumes
 	// the list of responses after all prompts have been sent to user
-	Consumer string
+	Consumer ConsumerType
 }
 
 type Processor func(*tb.Message, *Prompt) *tb.Message
@@ -25,16 +25,11 @@ var Processors = map[string]Processor {
 
 }
 
-type Generator func(*tb.Message, *Prompt)
-
-var Generators = map[string]Generator {
-	"SwitchChatPrompt": SwitchChatPrompt,
-}
 
 type Prompt struct {
 	// function that receives input from previous prompt's output
 	// used to create the Text and Reply
-	GenerateMessage string
+	GenerateMessage GeneratorType
 	// standard message to prompt user with
 	Text string
 	// optional keyboard to send to user
@@ -100,7 +95,7 @@ func step(m *tb.Message, p *Path) error {
 	if p.Index == len(p.Prompts) {
 		LogI.Print("reached the end of the path")
 		if p.Consumer != "" {
-			if consumer, ok := Consumers[p.Consumer]; !ok {
+			if consumer, ok := ConsumerRegistry[p.Consumer]; !ok {
 				LogE.Printf("consumer not found in registry: %s", p.Consumer)
 			} else {
 				consumer(p.Responses)
@@ -117,7 +112,7 @@ func step(m *tb.Message, p *Path) error {
 	// if there is still a prompt in the list, send it, increment the index
 	// and update the saved state data with a reset TTL
 	if pr.GenerateMessage != "" {
-		Generators[pr.GenerateMessage](m, &pr)
+		GeneratorRegistry[pr.GenerateMessage](m, &pr)
 	}
 	if m.Private() {
 		B.Send(m.Sender, pr.Text, &pr.Reply)

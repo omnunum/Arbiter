@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/gob"
-		"reflect"
+	"reflect"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 
@@ -19,7 +19,7 @@ func EncodePath(p *Path) []byte {
 	return data
 }
 
-func DecodePath(data []byte) Path{
+func DecodePath(data []byte) Path {
 	var by bytes.Buffer
 	by.Write(data)
 	dec := gob.NewDecoder(&by)
@@ -44,7 +44,7 @@ func EncodePrompt(pr *Prompt) []byte {
 	return data
 }
 
-func DecodePrompt(data []byte) Prompt{
+func DecodePrompt(data []byte) Prompt {
 	var by bytes.Buffer
 	by.Write(data)
 	dec := gob.NewDecoder(&by)
@@ -69,7 +69,7 @@ func EncodeChat(c *tb.Chat) []byte {
 	return data
 }
 
-func DecodeChat(data []byte, c *tb.Chat){
+func DecodeChat(data []byte, c *tb.Chat) {
 	var by bytes.Buffer
 	by.Write(data)
 	dec := gob.NewDecoder(&by)

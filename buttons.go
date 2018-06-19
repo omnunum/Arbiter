@@ -2,7 +2,7 @@ package main
 
 import (
 	tb "gopkg.in/tucnak/telebot.v2"
-	)
+)
 
 type FunctionButton struct {
 	Label    string
@@ -79,7 +79,7 @@ var AdminFunctions = []FunctionButton{
 			Prompts: []Prompt{
 				{Text: "Who would you like to add as an admin?"},
 			},
-			Consumer: "/addadmin",
+			Consumer: CAddAdmin,
 		}),
 	},
 	{
@@ -88,7 +88,7 @@ var AdminFunctions = []FunctionButton{
 			Prompts: []Prompt{
 				{Text: "Who would you like to remove as an admin?"},
 			},
-			Consumer: "/removeadmin",
+			Consumer: CRemoveAdmin,
 		}),
 	},
 	{
@@ -105,7 +105,7 @@ var CommandFunctions = []FunctionButton{
 				{Text: "What's the name of the command?",},
 				{Text: "What would you like the response to be? (Markdown formatting is supported)",},
 			},
-			Consumer: "/addcommand",
+			Consumer: CAddAdmin,
 		}),
 	},
 	{
@@ -114,7 +114,7 @@ var CommandFunctions = []FunctionButton{
 			Prompts: []Prompt{
 				{Text: "What command would you like to remove?"},
 			},
-			Consumer: "/removecommand",
+			Consumer: CRemoveCommand,
 		}),
 	},
 	{
@@ -133,7 +133,7 @@ var ChatFunctions = []FunctionButton{
 			Prompts: []Prompt{
 				{Text: "What chat would you like to beru to stop managing?"},
 			},
-			Consumer: "/removecommand",
+			Consumer: CRemoveCommand,
 		}),
 	},
 	{
@@ -141,7 +141,7 @@ var ChatFunctions = []FunctionButton{
 		wrapPathBegin(Path{
 			Prompts: []Prompt{
 				{
-					GenerateMessage: "SwitchChatPrompt",
+					GenerateMessage: GSwitchChat,
 					Text:            "What chat would you like to manage?",
 				},
 			},

@@ -1,15 +1,44 @@
 package main
 
 import (
-		"strings"
+	"strings"
 	"fmt"
 	tb "gopkg.in/tucnak/telebot.v2"
 	"github.com/go-redis/redis"
-	)
+)
+
+// needs to be string constant so we can encode with gob
+// but still refer to functions, since functions can't be
+// encoded with gob
+type ConsumerType string
+
+const (
+	CAddAdmin      ConsumerType = "/addadmin"
+	CViewAdmins    ConsumerType = "/viewadmins"
+	CAddChat       ConsumerType = "/addchat"
+	CRemoveAdmin   ConsumerType = "/removeadmin"
+	CSwitchChat    ConsumerType = "/switchchat"
+	CAddCommand    ConsumerType = "/addcommand"
+	CRemoveCommand ConsumerType = "/removecommand"
+	CViewCommands  ConsumerType = "/viewcommands"
+)
+
+type Consumer func([]*tb.Message)
+
+var ConsumerRegistry = map[ConsumerType]Consumer{
+	CAddAdmin:      addAdmin,
+	CRemoveAdmin:   removeAdmin,
+	CViewAdmins:    viewAdmins,
+	CAddChat:       addChat,
+	CSwitchChat:    switchChat,
+	CAddCommand:    addCommand,
+	CRemoveCommand: removeCommand,
+	CViewCommands:  viewCommands,
+}
 
 func userHasAdminManagementAccess(userID int, chatID int) (bool, error) {
 	owner, err := R.Get(fmt.Sprintf("chat:%d:owner", chatID)).Int64()
-	if err != redis.Nil{
+	if err != redis.Nil {
 		return int(owner) == userID, nil
 	}
 	return false, err
@@ -201,5 +230,3 @@ func switchChat(ms []*tb.Message) {
 		B.Send(m.Sender, fmt.Sprintf("switched to managing chat %s", chatName))
 	}
 }
-
-

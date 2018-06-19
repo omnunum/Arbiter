@@ -10,7 +10,7 @@ import (
 	"strings"
 	"encoding/gob"
 	"text/template"
-	bytes2 "bytes"
+	"bytes"
 )
 
 /*
@@ -33,8 +33,6 @@ user:%userID:chats <SET> : quick lookup to see what chats user is admin/owner of
 
 var R *redis.Client
 var B *tb.Bot
-
-var Consumers map[string]func([]*tb.Message)
 
 const ErrorResponse string = "Something went wrong and I wasn't able to fulfill that request"
 
@@ -63,16 +61,6 @@ You can control me by sending these commands:
 func main() {
 	gob.Register(Path{})
 	gob.Register(Prompt{})
-	Consumers = map[string]func([]*tb.Message){
-		"/addadmin":      addAdmin,
-		"/removeadmin":   removeAdmin,
-		"/viewadmins":    viewAdmins,
-		"/addchat":       addChat,
-		"/switchchat":    switchChat,
-		"/addcommand":    addCommand,
-		"/removecommand": removeCommand,
-		"/viewcommands":  viewCommands,
-	}
 
 	R = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -85,11 +73,11 @@ func main() {
 		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 	})
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 		return
 	}
 
-	// for k, v := range Consumers {
+	// for k, v := range ConsumerRegistry {
 	// 	B.Handle(k, v)
 	// }
 
@@ -135,7 +123,7 @@ func main() {
 			key := fmt.Sprintf("chat:%d:commands", chat)
 			if commandText, err := R.HGet(key, commandName).Result(); err != redis.Nil {
 				t, _ := template.New("command").Parse(commandText)
-				by := bytes2.Buffer{}
+				by := bytes.Buffer{}
 				if err := t.Execute(&by, m); err != nil {
 					B.Send(dest, ErrorResponse)
 				} else {
