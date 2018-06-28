@@ -13,15 +13,84 @@ type GeneratorType string
 
 const (
 	GSwitchChat GeneratorType = "SwitchChatGenerator"
+	GAddAdmin GeneratorType = "AddAdminGenerator"
+	GRemoveAdmin GeneratorType = "RemoveAdminGenerator"
+	GRemoveChat GeneratorType = "RemoveChatGenerator"
 )
 
+// a generator takes a message and a prompt, uses the messaage
+// to generate output, and writes the output message to the prompt
+// Text and or Reply fields.
 type Generator func(*tb.Message, *Prompt)
 
 var GeneratorRegistry = map[GeneratorType]Generator{
 	GSwitchChat: SwitchChatGenerator,
+	GRemoveChat: RemoveChatGenerator,
+	GAddAdmin: AddAdminGenerator,
+	GRemoveAdmin: RemoveAdminGenerator,
 }
 
 func SwitchChatGenerator(m *tb.Message, pr *Prompt) {
+	ChatSubGenerator(m, pr, CSwitchChat)
+}
+
+func RemoveChatGenerator(m *tb.Message, pr *Prompt) {
+	ChatSubGenerator(m, pr, CRemoveChat)
+}
+
+func AddAdminGenerator(m *tb.Message, pr *Prompt) {
+	AdminSubGenerator(m, pr, CAddAdmin)
+}
+
+func RemoveAdminGenerator(m *tb.Message, pr *Prompt) {
+	AdminSubGenerator(m, pr, CRemoveAdmin)
+}
+
+func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
+	userID := m.Sender.ID
+	chatID, _, err := getUsersActiveChat(userID)
+	if err != nil {
+		LogE.Printf("unable to get activeChat: %s", err)
+	}
+	admins := []string{}
+	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
+	if consumer == CAddAdmin{
+		allKey := fmt.Sprintf("chat:%d:admins", chatID)
+		admins, err = R.SDiff(allKey, activeKey).Result()
+	} else {
+		admins, err = R.SMembers(activeKey).Result()
+	}
+	// build keyboard for chat selection
+	keys := [][]tb.ReplyButton{}
+	row := []tb.ReplyButton{}
+	for _, a := range admins {
+		// convert chatID strings to ints
+		if id, err := strconv.Atoi(a); err != nil {
+			LogE.Printf("can't convert userID %s into int: %s", a, err)
+			pr = &ErrorPrompt
+			return
+		} else {
+			// create a button for each chat
+			userName, _ := getUserName(id)
+			wrappedCallback := interceptMessageText(fmt.Sprintf("%d", id), consumer)
+			button := tb.ReplyButton{
+				Text: userName,
+			}
+			// wrap the callback with the userID so that the button displays
+			// the users name but calls the consumer with the id
+			B.Handle(&button, wrappedCallback)
+			row = append(row, button)
+		}
+	}
+	keys = append(keys, row)
+	pr.Reply = tb.ReplyMarkup{
+		ReplyKeyboard:       keys,
+		ResizeReplyKeyboard: true,
+		OneTimeKeyboard:     true,
+	}
+}
+
+func ChatSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	userID := m.Sender.ID
 	// grab chat ids associated with user
 	k := fmt.Sprintf("user:%d:chats", userID)
@@ -37,18 +106,18 @@ func SwitchChatGenerator(m *tb.Message, pr *Prompt) {
 	for _, c := range chatIDs {
 		// convert chatID strings to ints
 		if id, err := strconv.Atoi(c); err != nil {
-			LogE.Printf("can't convert userID %s into int: %s", c, err)
+			LogE.Printf("can't convert chatID %s into int: %s", c, err)
 			pr = &ErrorPrompt
 			return
 		} else {
 			// create a button for each chat
 			chatTitle, _ := getChatTitle(id)
-			wrappedCallback := wrapSwitchChat(id)
+			wrappedCallback := interceptMessageText(fmt.Sprintf("%d", id), consumer)
 			button := tb.ReplyButton{
 				Text: chatTitle,
 			}
 			// wrap the callback with the chatID so that the button displays
-			// the chat title but calls the switch consumer with the id
+			// the chat title but calls the consumer with the id
 			B.Handle(&button, wrappedCallback)
 			row = append(row, button)
 		}
@@ -61,10 +130,11 @@ func SwitchChatGenerator(m *tb.Message, pr *Prompt) {
 	}
 }
 
-func wrapSwitchChat(chatID int) func(m *tb.Message) {
+
+func interceptMessageText(msg string, consumer ConsumerType) func(m *tb.Message) {
 	return func(m *tb.Message) {
-		m.Text = fmt.Sprintf("%d", chatID)
+		m.Text = msg
 		ms := []*tb.Message{m}
-		switchChat(ms)
+		ConsumerRegistry[consumer](ms)
 	}
 }

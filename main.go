@@ -11,7 +11,7 @@ import (
 	"encoding/gob"
 	"text/template"
 	"bytes"
-)
+	)
 
 /*
 STATE GUIDE
@@ -61,6 +61,8 @@ You can control me by sending these commands:
 func main() {
 	gob.Register(Path{})
 	gob.Register(Prompt{})
+	gob.Register(tb.User{})
+	gob.Register(tb.Chat{})
 
 	R = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -108,11 +110,12 @@ func main() {
 		if p := getUsersActivePath(m.Sender.ID); p != nil {
 			step(m, p)
 		}
-		// check if added static command
+		// check if command
 		if strings.HasPrefix(m.Text, "/") {
 			commandName := strings.Split(m.Text, " ")[0]
 			var chat int
 			var dest tb.Recipient
+			// if chatting with beru, respond to user, else chat
 			if m.Private() {
 				chat, _, _ = getUsersActiveChat(m.Sender.ID)
 				dest = m.Sender
@@ -125,6 +128,7 @@ func main() {
 				t, _ := template.New("command").Parse(commandText)
 				by := bytes.Buffer{}
 				if err := t.Execute(&by, m); err != nil {
+					LogE.Printf("failed to render template for command %s in chat %d", commandName, chat)
 					B.Send(dest, ErrorResponse)
 				} else {
 					B.Send(dest, by.String())
@@ -141,15 +145,26 @@ func main() {
 		R.SAdd(fmt.Sprintf("user:%d:chats", m.Sender.ID), m.Chat.ID)
 		// save the full user info if we need it later
 		R.Set(fmt.Sprintf("user:%d:info", m.Sender.ID), EncodeUser(m.Sender), 0)
-		// add user to chats admin list
-		R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), m.Sender.ID)
+		// // add user to active chats admin list
+		R.SAdd(fmt.Sprintf("chat:%d:activeAdmins", m.Chat.ID), m.Sender.ID)
 		// since this is the inviter, add this user as the owner of the chat
 		R.Set(fmt.Sprintf("chat:%d:owner", m.Chat.ID), m.Sender.ID, 0)
 		// save the chat title so we can display it to the user
 		R.Set(fmt.Sprintf("chat:%d:title", m.Chat.ID), m.Chat.Title, 0)
 		// save the full chat info if we need it later
 		R.Set(fmt.Sprintf("chat:%d:info", m.Chat.ID), EncodeChat(m.Chat), 0)
-
+		// add all chat admins to list so we can prompt user with potential
+		// options when adding and removing admins
+		if members, err := B.AdminsOf(m.Chat); err != nil {
+			LogE.Printf("error fetching admins for chat %s", m.Chat.ID)
+			B.Send(m.Sender, ErrorResponse)
+		} else {
+			for _, u := range members {
+				R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
+					EncodeUser(u.User),0)
+				R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), u.User.ID)
+			}
+		}
 		LogI.Printf("beru joined chat %s (%d) invited by %s (%d)",
 			m.Chat.Title, m.Chat.ID, m.Sender.Username, m.Sender.ID)
 		B.Send(m.Sender, fmt.Sprintf("beru joined chat %s", m.Chat.Title))
@@ -168,3 +183,4 @@ func main() {
 		return
 	}
 }
+

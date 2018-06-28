@@ -60,7 +60,7 @@ func DecodePrompt(data []byte) Prompt {
 func EncodeChat(c *tb.Chat) []byte {
 	var by bytes.Buffer
 	enc := gob.NewEncoder(&by)
-	if err := enc.Encode(&c); err != nil {
+	if err := enc.Encode(c); err != nil {
 		LogE.Printf("could not gob encode %s due to %s",
 			reflect.TypeOf(&c), err)
 		panic(err)
@@ -69,16 +69,18 @@ func EncodeChat(c *tb.Chat) []byte {
 	return data
 }
 
-func DecodeChat(data []byte, c *tb.Chat) {
+func DecodeChat(data []byte) *tb.Chat{
 	var by bytes.Buffer
 	by.Write(data)
 	dec := gob.NewDecoder(&by)
-	if err := dec.Decode(&c); err != nil {
+	c := &tb.Chat{}
+	if err := dec.Decode(c); err != nil {
 		LogE.Printf(
 			"Unable to decode data into the new %s struct due to %s",
 			reflect.TypeOf(c), err)
 		panic(err)
 	}
+	return c
 }
 
 func EncodeUser(u *tb.User) []byte {
@@ -93,14 +95,16 @@ func EncodeUser(u *tb.User) []byte {
 	return data
 }
 
-func DecodeUser(data []byte, u *tb.User) {
+func DecodeUser(data []byte) *tb.User{
 	var by bytes.Buffer
 	by.Write(data)
 	dec := gob.NewDecoder(&by)
-	if err := dec.Decode(&u); err != nil {
+	u := &tb.User{}
+	if err := dec.Decode(u); err != nil {
 		LogE.Printf(
 			"Unable to decode data into the new %s struct due to %s",
 			reflect.TypeOf(u), err)
 		panic(err)
 	}
+	return u
 }

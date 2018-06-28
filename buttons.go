@@ -9,7 +9,7 @@ type FunctionButton struct {
 	Function func(*tb.Message)
 }
 
-func wrapSingleMessage(f func([]*tb.Message)) func(*tb.Message) {
+func wrapSingleMessage(f func([]*tb.Message) (error)) func(*tb.Message) {
 	return func(m *tb.Message) {
 		f([]*tb.Message{m})
 	}
@@ -77,18 +77,22 @@ var AdminFunctions = []FunctionButton{
 		"Add Admin",
 		wrapPathBegin(Path{
 			Prompts: []Prompt{
-				{Text: "Who would you like to add as an admin?"},
+				{
+					GenerateMessage: GAddAdmin,
+					Text:            "Who would you like to add as an admin?",
+				},
 			},
-			Consumer: CAddAdmin,
 		}),
 	},
 	{
 		"Remove Admin",
 		wrapPathBegin(Path{
 			Prompts: []Prompt{
-				{Text: "Who would you like to remove as an admin?"},
+				{
+					GenerateMessage: GRemoveAdmin,
+					Text:            "Who would you like to remove as an admin?",
+				},
 			},
-			Consumer: CRemoveAdmin,
 		}),
 	},
 	{
@@ -131,9 +135,11 @@ var ChatFunctions = []FunctionButton{
 		"Remove Chat",
 		wrapPathBegin(Path{
 			Prompts: []Prompt{
-				{Text: "What chat would you like to beru to stop managing?"},
+				{
+					GenerateMessage: GRemoveChat,
+					Text:            "What chat would you like to beru to stop managing?",
+				},
 			},
-			Consumer: CRemoveCommand,
 		}),
 	},
 	{
