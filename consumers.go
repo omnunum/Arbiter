@@ -6,7 +6,8 @@ import (
 	tb "gopkg.in/tucnak/telebot.v2"
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
-	)
+	"strconv"
+)
 
 // needs to be string constant so we can encode with gob
 // but still refer to functions, since functions can't be
@@ -45,51 +46,6 @@ const (
 	cGet
 	cSet
 )
-
-func userHasAdminManagementAccess(userID int, chatID int) (bool, error) {
-	owner, err := R.Get(fmt.Sprintf("chat:%d:owner", chatID)).Int64()
-	if err != redis.Nil {
-		return int(owner) == userID, nil
-	}
-	return false, err
-}
-
-func getUsersActiveChat(userID int) (int, string, error) {
-	key := fmt.Sprintf("user:%d:activeChat", userID)
-	activeChatID, err := R.Get(key).Int64()
-	if err != nil {
-		errors.Wrapf(err, "userID %d doesn't have an active chat but tried to access it", userID)
-		return 0, "", err
-	}
-	chatName, err := getChatTitle(int(activeChatID))
-	return int(activeChatID), chatName, nil
-}
-
-func getChatTitle(chatID int) (string, error) {
-	key := fmt.Sprintf("chat:%d:title", chatID)
-	if title, err := R.Get(key).Result(); err == redis.Nil {
-		errors.Wrapf(err, "could not access title for chat %d", chatID)
-		return "", err
-	} else {
-		return title, nil
-	}
-}
-
-func getUserName(userID int) (string, error) {
-	key := fmt.Sprintf("user:%d:info", userID)
-	if data, err := R.Get(key).Bytes(); err == redis.Nil {
-		errors.Wrapf(err, "could not access title for chat %d", userID)
-		return "", err
-	} else {
-		u := DecodeUser(data)
-		if u.Username != "" {
-			return u.Username, nil
-		} else {
-			name := fmt.Sprintf("%s %s", u.FirstName, u.LastName)
-			return name, nil
-		}
-	}
-}
 
 func getReplyKeyboardForCommands(commands []FunctionButton) ([][]tb.ReplyButton) {
 	keys := [][]tb.ReplyButton{}
@@ -135,18 +91,21 @@ func accessAdmins(userID int, operation int, adminID ... string) (msg string, er
 		err = errors.Wrapf(err, "couldn't get active chat")
 		return
 	}
-	key := fmt.Sprintf("chat:%d:activeAdmins", chatID)
+	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
+	userChatsKey := fmt.Sprintf("user:%s:chats", adminID[0])
 	switch operation {
 	case cGet:
 		var val []string
-		val, err = R.SMembers(key).Result()
+		val, err = R.SMembers(activeKey).Result()
 		msg = fmt.Sprintf("admins for chat %s are %s", chanTitle, val)
 	case cRem:
-		err = R.SRem(key, adminID[0]).Err()
-		msg = fmt.Sprintf("admin removed: %s", adminID)
+		err = R.SRem(activeKey, adminID[0]).Err()
+		err = R.SRem(userChatsKey, chatID).Err()
+		msg = fmt.Sprintf("admin removed: %s", adminID[0])
 	case cSet:
-		err = R.SAdd(key, adminID[0]).Err()
-		msg = fmt.Sprintf("admin added: %s", adminID)
+		err = R.SAdd(activeKey, adminID[0]).Err()
+		err = R.SAdd(userChatsKey, chatID).Err()
+		msg = fmt.Sprintf("admin added: %s", adminID[0])
 	}
 	err = errors.Wrap(err, "")
 	return
@@ -300,27 +259,46 @@ func removeChat(ms []*tb.Message) (err error) {
 	activeKey := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
 	activeChat, err := R.Get(activeKey).Result()
 	titleKey := fmt.Sprintf("chat:%s:title", chatID)
-	if chatName, err := R.Get(titleKey).Result(); err == redis.Nil {
+	var chatName = ""
+	if chatName, err = R.Get(titleKey).Result(); err == redis.Nil {
 		return errors.Wrapf(err, "failed to lookup title for chat %d", chatID)
-	} else {
-		if activeChat == chatID {
-			B.Send(m.Sender, fmt.Sprintf("can't remove actively managed chat: %s. please change chats and then try again", chatName))
-		} else {
-			R.Del(activeChat)
-			R.Del(fmt.Sprintf("chat:%s:owner", chatID))
-			R.Del(fmt.Sprintf("chat:%s:title", chatID))
-			R.Del(fmt.Sprintf("chat:%s:activeAdmins", chatID))
-			adminsKey := fmt.Sprintf("chat:%s:admins", chatID)
-			if allAdmins, err := R.SMembers(adminsKey).Result(); err != err {
-				for _, admin := range allAdmins {
-					R.SRem(fmt.Sprintf("user:%s:activeChat", admin))
+	}
+	if activeChat == chatID {
+		R.Set(fmt.Sprintf("user:%s:activeChat", m.Sender.ID), 0, 0)
+	}
+
+	R.Del(fmt.Sprintf("chat:%s:owner", chatID))
+	R.Del(fmt.Sprintf("chat:%s:title", chatID))
+	R.Del(fmt.Sprintf("chat:%s:activeAdmins", chatID))
+	adminsKey := fmt.Sprintf("chat:%s:admins", chatID)
+	if allAdmins, err := R.SMembers(adminsKey).Result(); err != redis.Nil {
+		for _, admin := range allAdmins {
+			// remove access to the chat getting deleted
+			R.SRem(fmt.Sprintf("user:%s:chats", admin), chatID)
+			// convert admins id to int
+			userID, _ := strconv.Atoi(admin)
+			// get active chat of admin we're about to remove access
+			adminsActiveChat, _, _ := getUsersActiveChat(userID)
+			// if the admin in question has the chat about to be removed
+			// as their active chat
+			if chatID == strconv.Itoa(adminsActiveChat) {
+				// get other chats available to admin
+				chats, err := R.SMembers(fmt.Sprintf("user:%s:chats", admin)).Result()
+				if err != nil && len(chats) > 0 {
+					R.Set(fmt.Sprintf("user:%s:activeChat", admin), chats[0], 0)
+				} else {
+					R.Set(fmt.Sprintf("user:%s:activeChat", admin), 0, 0)
 				}
+
+			} else {
+				R.Set(fmt.Sprintf("user:%s:activeChat", admin), 0, 0)
 			}
-			id, _ := R.Get(fmt.Sprintf("chat:%s:info", chatID)).Bytes()
-			B.Leave(DecodeChat(id))
-			R.Del(fmt.Sprintf("chat:%s:info", chatID))
-			B.Send(m.Sender, fmt.Sprintf("removed beru management of chat %s", chatName))
 		}
 	}
+	id, err := strconv.Atoi(chatID)
+	B.Leave(&tb.Chat{ID:int64(id)})
+	R.Del(fmt.Sprintf("chat:%s:info", chatID))
+	R.Del(fmt.Sprintf("chat:%s:admins", chatID))
+	B.Send(m.Sender, fmt.Sprintf("removed beru management of chat %s", chatName))
 	return
 }

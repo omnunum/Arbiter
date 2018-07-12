@@ -53,7 +53,17 @@ func listChatFunctions(m *tb.Message) {
 
 func listFunctionGroups(m *tb.Message) {
 	chatID, _, _ := getUsersActiveChat(m.Sender.ID)
-
+	if chatID == 0 {
+		wrapPathBegin(Path{
+			Prompts: []Prompt{
+				{
+					GenerateMessage: GSwitchChat,
+					Text:            "Select a chat before we can get started.",
+				},
+			},
+		})(m)
+		return
+	}
 	buttons := getReplyKeyboardForCommands(FunctionGroups)
 	// if the user is a chat owner
 	if access, err := userHasAdminManagementAccess(m.Sender.ID, chatID); access {
@@ -61,10 +71,10 @@ func listFunctionGroups(m *tb.Message) {
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
 		})
-		// if the user isn't an owner
+	// if the user isn't an owner
 	} else if !access && err == nil {
 		// remove last element (admin buttons)
-		buttons = buttons[:len(buttons)-1]
+		buttons[0]= buttons[0][:len(buttons[0])-1]
 		B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
@@ -109,7 +119,7 @@ var CommandFunctions = []FunctionButton{
 				{Text: "What's the name of the command?",},
 				{Text: "What would you like the response to be? (Markdown formatting is supported)",},
 			},
-			Consumer: CAddAdmin,
+			Consumer: CAddCommand,
 		}),
 	},
 	{

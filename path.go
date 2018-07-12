@@ -98,6 +98,9 @@ func step(m *tb.Message, p *Path) error {
 			if consumer, ok := ConsumerRegistry[p.Consumer]; !ok {
 				LogE.Printf("consumer not found in registry: %s", p.Consumer)
 			} else {
+				// if yes, _ := userHasAdminManagementAccess(m); yes {
+				//
+				// }
 				consumer(p.Responses)
 			}
 		}

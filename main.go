@@ -88,9 +88,9 @@ func main() {
 		if !m.Private() {
 			return
 		}
-		// if there isn't an active chat for this user
-		key := fmt.Sprintf("user:%d:activeChat", m.Sender.ID)
-		if exists := R.Exists(key).Val(); exists == 0 {
+		// if the user isnt an admin of any chats
+		key := fmt.Sprintf("user:%d:chats", m.Sender.ID)
+		if nChats := R.SCard(key).Val(); nChats == 0 {
 			B.Send(m.Sender, "I need to be invited to a chat before I can be useful")
 			addChat([]*tb.Message{m})
 		} else {

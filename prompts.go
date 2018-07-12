@@ -55,6 +55,17 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	admins := []string{}
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
 	if consumer == CAddAdmin{
+		if members, err := B.AdminsOf(&tb.Chat{ID: int64(chatID)}); err != nil {
+			LogE.Printf("error fetching admins for chat %s", m.Chat.ID)
+			B.Send(m.Sender, ErrorResponse)
+		} else {
+			for _, u := range members {
+				encoded := EncodeUser(u.User)
+				R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
+					encoded,0)
+				R.SAdd(fmt.Sprintf("chat:%d:admins", chatID), u.User.ID)
+			}
+		}
 		allKey := fmt.Sprintf("chat:%d:admins", chatID)
 		admins, err = R.SDiff(allKey, activeKey).Result()
 	} else {
