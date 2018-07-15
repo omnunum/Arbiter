@@ -138,6 +138,24 @@ func main() {
 
 	})
 
+	B.Handle("/admins", func(m *tb.Message) {
+		if m.Private() {
+			return
+		}
+		if members, err := B.AdminsOf(m.Chat); err != nil {
+			LogE.Printf("error fetching admins for chat %s", m.Chat.ID)
+			B.Send(m.Sender, ErrorResponse)
+		} else {
+			var usernameList = []string{}
+			for _, u := range members {
+				usernameList = append(usernameList, "@" + u.User.Username)
+			}
+
+			B.Send(m.Chat, fmt.Sprintf("Hey %s %s, the admins for this channel are: %s",
+				m.Sender.FirstName, m.Sender.LastName, strings.Join(usernameList, ", ")))
+		}
+	})
+
 	B.Handle(tb.OnAddedToGroup, func(m *tb.Message) {
 		// add chat to list of chats beru has been added to
 		R.SAdd("beru:chats", m.Chat.ID)
