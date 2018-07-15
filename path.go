@@ -45,7 +45,7 @@ var ErrorPrompt = Prompt{
 	Text: ErrorResponse,
 }
 
-func wrapPathBegin(p Path) func(ms *tb.Message) {
+func wrapPathBegin(p Path) func(m *tb.Message) {
 	return func(m *tb.Message) {
 		begin(m, p)
 	}

@@ -79,10 +79,10 @@ func main() {
 		return
 	}
 
-	// for k, v := range ConsumerRegistry {
-	// 	B.Handle(k, v)
-	// }
-
+	for k, v := range BuiltinCommandRegistry {
+		B.Handle(k, v)
+	}
+	
 	// Command: /start <PAYLOAD>
 	B.Handle("/start", func(m *tb.Message) {
 		if !m.Private() {
