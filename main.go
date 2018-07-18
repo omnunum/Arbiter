@@ -24,6 +24,9 @@ chat:%chatID:owner <int> : super user/owner of chat, user that invited beru, can
 	admin set
 chat:%chatID:commands <MAP> : map of command names to static replies
 chat:%chatID:title <string> : name of chat
+chat:%chatID:usersJoinedCount <int> : number of users joined since beru started tracking
+chat:%chatID:usersJoinedLimit <int> : number of users joined before beru posts welcome message
+chat:%chatID:usersJoinedMessage <string> : welcome message to post
 
 user:%userID:activechat <string> : the chat to which the commands will affect
 user:%userID:activePath <Path> : the user dialogue Path that has been started,
@@ -48,14 +51,18 @@ You can control me by sending these commands:
 /removeadmin - removes a users ability to change chat rules
 /viewadmins - displays list of users with admin privileges
 
-*Chat Level Functionality*
+*Beru Level Functionality*
 /switchchat - changes which chat beru is managing when a user is an owner/admin of multiple chats
 /addchat - shortcut to invite link to add beru to your chat
+/removechat - choose between currently managed chats to remove
 
-*Custom Commands*
+*Custom Chat Commands*
 /addcommand - adds a custom command and response 
 /removecommand - removes a custom command
 /viewcommands - prints a list of custom commands
+
+*Chat Features*
+/setwelcome - greets every # users with a welcome message on chat join
 `
 
 func main() {
@@ -82,7 +89,7 @@ func main() {
 	for k, v := range BuiltinCommandRegistry {
 		B.Handle(k, v)
 	}
-	
+
 	// Command: /start <PAYLOAD>
 	B.Handle("/start", func(m *tb.Message) {
 		if !m.Private() {
@@ -154,6 +161,20 @@ func main() {
 			B.Send(m.Chat, fmt.Sprintf("Hey %s %s, the admins for this channel are: %s",
 				m.Sender.FirstName, m.Sender.LastName, strings.Join(usernameList, ", ")))
 		}
+	})
+
+	B.Handle(tb.OnUserJoined, func(m *tb.Message) {
+		countKey := fmt.Sprintf("chat:%d:usersJoinedCount", m.Chat.ID)
+		limitKey := fmt.Sprintf("chat:%d:usersJoinedLimit", m.Chat.ID)
+		messageKey := fmt.Sprintf("chat:%d:usersJoinedMessage", m.Chat.ID)
+		usersJoined, _ := R.Incr(countKey).Result()
+		usersLimit, _ := R.Get(limitKey).Int64()
+		if usersJoined % usersLimit == 0 {
+			joinedMsg, _ := R.Get(messageKey).Result()
+			fmtMsg := strings.Replace(joinedMsg, "$username", m.Sender.Username, -1)
+			B.Send(m.Chat, fmtMsg)
+		}
+
 	})
 
 	B.Handle(tb.OnAddedToGroup, func(m *tb.Message) {

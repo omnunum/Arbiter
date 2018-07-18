@@ -53,4 +53,12 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 		Consumer: CRemoveCommand,
 	}),
 	"/viewcommands": wrapSingleMessage(viewCommands),
+	"/setwelcome": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: `What is the message you would like to welcome your users with?
+(you can use $username to be replaced with the new members username)`,},
+			{Text: "How many users do you want to join between each welcome message?",},
+		},
+		Consumer: CSetWelcome,
+	}),
 }

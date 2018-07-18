@@ -24,6 +24,7 @@ const (
 	CAddCommand    ConsumerType = "/addcommand"
 	CRemoveCommand ConsumerType = "/removecommand"
 	CViewCommands  ConsumerType = "/viewcommands"
+	CSetWelcome    ConsumerType = "/setwelcome"
 )
 
 type Consumer func([]*tb.Message) (error)
@@ -38,6 +39,7 @@ var ConsumerRegistry = map[ConsumerType]Consumer{
 	CAddCommand:    addCommand,
 	CRemoveCommand: removeCommand,
 	CViewCommands:  viewCommands,
+	CSetWelcome:	setWelcome,
 }
 
 // consts for switching basic consumer behavior
@@ -296,9 +298,24 @@ func removeChat(ms []*tb.Message) (err error) {
 		}
 	}
 	id, err := strconv.Atoi(chatID)
-	B.Leave(&tb.Chat{ID:int64(id)})
+	B.Leave(&tb.Chat{ID: int64(id)})
 	R.Del(fmt.Sprintf("chat:%s:info", chatID))
 	R.Del(fmt.Sprintf("chat:%s:admins", chatID))
 	B.Send(m.Sender, fmt.Sprintf("removed beru management of chat %s", chatName))
+	return
+}
+
+func setWelcome(ms []*tb.Message) (err error) {
+	chatID, _, _ := getUsersActiveChat(ms[0].Sender.ID)
+	message, count := ms[0].Text, ms[1].Text
+	countInt, err := strconv.Atoi(count)
+	if err != nil {
+		B.Send(ms[0].Sender, fmt.Sprintf("User count needs to be a number, \"%s\" is not a number", count))
+		return
+	}
+	limitKey := fmt.Sprintf("chat:%d:usersJoinedLimit", chatID)
+	messageKey := fmt.Sprintf("chat:%d:usersJoinedMessage", chatID)
+	err = R.Set(messageKey, message, 0).Err()
+	err = R.Set(limitKey, countInt, 0).Err()
 	return
 }
