@@ -54,14 +54,7 @@ func listChatFunctions(m *tb.Message) {
 func listFunctionGroups(m *tb.Message) {
 	chatID, _, _ := getUsersActiveChat(m.Sender.ID)
 	if chatID == 0 {
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{
-					GenerateMessage: GSwitchChat,
-					Text:            "Select a chat before we can get started.",
-				},
-			},
-		})(m)
+		BuiltinCommandRegistry["/switchchat"](m)
 		return
 	}
 	buttons := getReplyKeyboardForCommands(FunctionGroups)
@@ -71,10 +64,10 @@ func listFunctionGroups(m *tb.Message) {
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
 		})
-	// if the user isn't an owner
+		// if the user isn't an owner
 	} else if !access && err == nil {
 		// remove last element (admin buttons)
-		buttons[0]= buttons[0][:len(buttons[0])-1]
+		buttons[0] = buttons[0][:len(buttons[0])-1]
 		B.Send(m.Sender, "Check out these commands!", &tb.ReplyMarkup{
 			ReplyKeyboard:       buttons,
 			ResizeReplyKeyboard: true,
@@ -85,82 +78,48 @@ func listFunctionGroups(m *tb.Message) {
 var AdminFunctions = []FunctionButton{
 	{
 		"Add Admin",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{
-					GenerateMessage: GAddAdmin,
-					Text:            "Who would you like to add as an admin?",
-				},
-			},
-		}),
+		BuiltinCommandRegistry["/addadmin"],
 	},
 	{
 		"Remove Admin",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{
-					GenerateMessage: GRemoveAdmin,
-					Text:            "Who would you like to remove as an admin?",
-				},
-			},
-		}),
+		BuiltinCommandRegistry["/removeadmin"],
 	},
 	{
 		"View Admins",
-		wrapSingleMessage(viewAdmins),
+		BuiltinCommandRegistry["/viewadmins"],
 	},
 }
 
 var CommandFunctions = []FunctionButton{
 	{
 		"Add Command",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{Text: "What's the name of the command?",},
-				{Text: "What would you like the response to be? (Markdown formatting is supported)",},
-			},
-			Consumer: CAddCommand,
-		}),
+		BuiltinCommandRegistry["/addcommand"],
 	},
 	{
 		"Remove Command",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{Text: "What command would you like to remove?"},
-			},
-			Consumer: CRemoveCommand,
-		}),
+		BuiltinCommandRegistry["/removecommand"],
 	},
 	{
 		"View Commands",
-		wrapSingleMessage(viewCommands)},
+		BuiltinCommandRegistry["/viewcommands"],
+	},
 }
 
 var ChatFunctions = []FunctionButton{
 	{
 		"Add Chat",
-		wrapSingleMessage(addChat),
+		BuiltinCommandRegistry["/addchat"],
 	},
 	{
 		"Remove Chat",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{
-					GenerateMessage: GRemoveChat,
-					Text:            "What chat would you like to beru to stop managing?",
-				},
-			},
-		}),
+		BuiltinCommandRegistry["/removechat"],
 	},
 	{
 		"Switch Chat",
-		wrapPathBegin(Path{
-			Prompts: []Prompt{
-				{
-					GenerateMessage: GSwitchChat,
-					Text:            "What chat would you like to manage?",
-				},
-			},
-		}),
+		BuiltinCommandRegistry["/switchchat"],
+	},
+	{
+		"Set Welcome",
+		BuiltinCommandRegistry["/setwelcome"],
 	},
 }

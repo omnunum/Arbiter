@@ -2,12 +2,12 @@ package main
 
 import (
 	tb "gopkg.in/tucnak/telebot.v2"
-				"fmt"
+	"fmt"
 	"time"
-	)
+)
 
 type Path struct {
-	// chain of text and keyboards to promp user with
+	// chain of text and keyboards to prompt user with
 	Prompts []Prompt
 	// tracks the progress through the path
 	Index int
@@ -17,14 +17,15 @@ type Path struct {
 	// reference to function registry value that consumes
 	// the list of responses after all prompts have been sent to user
 	Consumer ConsumerType
+	// path is only available to chat owner
+	OwnerOnly bool
 }
 
 type Processor func(*tb.Message, *Prompt) *tb.Message
 
-var Processors = map[string]Processor {
+var Processors = map[string]Processor{
 
 }
-
 
 type Prompt struct {
 	// function that receives input from previous prompt's output
@@ -51,13 +52,6 @@ func wrapPathBegin(p Path) func(m *tb.Message) {
 	}
 }
 
-// var Paths = map[string]Path{
-// 	"addAllAdminsOnChatInvitation": Path{
-// 		Prompts: []string{"Would you like to add all the admins of this channel?"},
-// 		Consumer: "/addAdmin",
-// 	},
-// }
-
 func getUsersActivePath(userID int) *Path {
 	key := fmt.Sprintf("user:%d:activePath", userID)
 	pathData, err := R.Get(key).Result()
@@ -76,6 +70,24 @@ func begin(m *tb.Message, p Path) {
 	err := R.Del(key).Err()
 	if err != nil {
 		LogE.Printf("unable to delete active path for %d %s", m.Sender.ID, err)
+		B.Send(m.Sender, ErrorResponse)
+		return
+	}
+	chatID, chanTitle, err := getUsersActiveChat(m.Sender.ID)
+	if err != nil {
+		LogE.Printf("couldn't lookup active chat for user: %s", m.Sender.ID)
+		B.Send(m.Sender, ErrorResponse)
+		return
+	}
+	access, err := userHasAdminManagementAccess(m.Sender.ID, chatID)
+	if err != nil {
+		LogE.Printf("couldn't lookup admin access for user: %s", m.Sender.ID)
+		B.Send(m.Sender, ErrorResponse)
+		return
+	}
+	if !access && p.OwnerOnly {
+		msg := fmt.Sprintf("You don't have admin management access for %s.", chanTitle)
+		B.Send(m.Sender, msg)
 		return
 	}
 	// remove button name from path message building
@@ -98,9 +110,6 @@ func step(m *tb.Message, p *Path) error {
 			if consumer, ok := ConsumerRegistry[p.Consumer]; !ok {
 				LogE.Printf("consumer not found in registry: %s", p.Consumer)
 			} else {
-				// if yes, _ := userHasAdminManagementAccess(m); yes {
-				//
-				// }
 				consumer(p.Responses)
 			}
 		}

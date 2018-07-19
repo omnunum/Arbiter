@@ -91,21 +91,28 @@ func accessAdmins(userID int, operation int, adminID ... string) (msg string, er
 	chatID, chanTitle, err := getUsersActiveChat(userID)
 	if err != nil {
 		err = errors.Wrapf(err, "couldn't get active chat")
-		return
+		return "", err
 	}
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
-	userChatsKey := fmt.Sprintf("user:%s:chats", adminID[0])
 	switch operation {
 	case cGet:
 		var val []string
 		val, err = R.SMembers(activeKey).Result()
-		msg = fmt.Sprintf("admins for chat %s are %s", chanTitle, val)
+		usernames := []string{}
+		for _, userID := range val {
+			userIDInt, _ := strconv.Atoi(userID)
+			username, _ := getUserName(userIDInt)
+			usernames = append(usernames, fmt.Sprintf("@%s", username))
+		}
+		msg = fmt.Sprintf("admins for chat %s are %s", chanTitle, usernames)
 	case cRem:
 		err = R.SRem(activeKey, adminID[0]).Err()
+		userChatsKey := fmt.Sprintf("user:%s:chats", adminID[0])
 		err = R.SRem(userChatsKey, chatID).Err()
 		msg = fmt.Sprintf("admin removed: %s", adminID[0])
 	case cSet:
 		err = R.SAdd(activeKey, adminID[0]).Err()
+		userChatsKey := fmt.Sprintf("user:%s:chats", adminID[0])
 		err = R.SAdd(userChatsKey, chatID).Err()
 		msg = fmt.Sprintf("admin added: %s", adminID[0])
 	}

@@ -12,6 +12,7 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 				Text:            "Who would you like to add as an admin?",
 			},
 		},
+		OwnerOnly: true,
 	}),
 	"/viewadmins": wrapSingleMessage(viewAdmins),
 	"/removeadmin": wrapPathBegin(Path{
@@ -21,6 +22,7 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 				Text:            "Who would you like to remove as an admin?",
 			},
 		},
+		OwnerOnly: true,
 	}),
 	"/removechat": wrapPathBegin(Path{
 		Prompts: []Prompt{

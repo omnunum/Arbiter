@@ -32,6 +32,7 @@ user:%userID:activechat <string> : the chat to which the commands will affect
 user:%userID:activePath <Path> : the user dialogue Path that has been started,
 	but not fully traversed
 user:%userID:chats <SET> : quick lookup to see what chats user is admin/owner of
+user:%user:info <tb.User> : user object for looking up user details
 */
 
 var R *redis.Client
