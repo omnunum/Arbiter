@@ -71,9 +71,10 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	} else {
 		admins, err = R.SMembers(activeKey).Result()
 	}
-	// build keyboard for chat selection
+	// build keyboard for admin selection
 	keys := [][]tb.ReplyButton{}
 	row := []tb.ReplyButton{}
+	viewableAdmins := 0
 	for _, a := range admins {
 		// convert chatID strings to ints
 		if id, err := strconv.Atoi(a); err != nil {
@@ -81,7 +82,11 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 			pr = &ErrorPrompt
 			return
 		} else {
-			// create a button for each chat
+			if m.Sender.ID == id {
+				continue
+			}
+			viewableAdmins += 1
+			// create a button for each admin
 			userName, _ := getUserName(id)
 			wrappedCallback := interceptMessageText(fmt.Sprintf("%d", id), consumer)
 			button := tb.ReplyButton{
@@ -93,11 +98,15 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 			row = append(row, button)
 		}
 	}
-	keys = append(keys, row)
-	pr.Reply = tb.ReplyMarkup{
-		ReplyKeyboard:       keys,
-		ResizeReplyKeyboard: true,
-		OneTimeKeyboard:     true,
+	if viewableAdmins == 0 {
+		pr.Text = "You're the only admin."
+	} else {
+		keys = append(keys, row)
+		pr.Reply = tb.ReplyMarkup{
+			ReplyKeyboard:       keys,
+			ResizeReplyKeyboard: true,
+			OneTimeKeyboard:     true,
+		}
 	}
 }
 
@@ -148,4 +157,65 @@ func interceptMessageText(msg string, consumer ConsumerType) func(m *tb.Message)
 		ms := []*tb.Message{m}
 		ConsumerRegistry[consumer](ms)
 	}
+}
+
+var BuiltinCommandRegistry = map[string]func(*tb.Message){
+	"/addadmin": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				GenerateMessage: GAddAdmin,
+				Text:            "Who would you like to add as an admin?",
+			},
+		},
+		OwnerOnly: true,
+	}),
+	"/viewadmins": wrapSingleMessage(viewAdmins),
+	"/removeadmin": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				GenerateMessage: GRemoveAdmin,
+				Text:            "Who would you like to remove as an admin?",
+			},
+		},
+		OwnerOnly: true,
+	}),
+	"/removechat": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				GenerateMessage: GRemoveChat,
+				Text:            "What chat would you like to beru to stop managing?",
+			},
+		},
+	}),
+	"/addchat": wrapSingleMessage(addChat),
+	"/switchchat": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				GenerateMessage: GSwitchChat,
+				Text:            "What chat would you like to manage?",
+			},
+		},
+	}),
+	"/addcommand": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: "What's the name of the command?",},
+			{Text: "What would you like the response to be? (Markdown formatting is supported)",},
+		},
+		Consumer: CAddCommand,
+	}),
+	"/removecommand": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: "What command would you like to remove?"},
+		},
+		Consumer: CRemoveCommand,
+	}),
+	"/viewcommands": wrapSingleMessage(viewCommands),
+	"/setwelcome": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: `What is the message you would like to welcome your users with?
+(you can use $username to be replaced with the new members username)`,},
+			{Text: "How many users do you want to join between each welcome message?",},
+		},
+		Consumer: CSetWelcome,
+	}),
 }
