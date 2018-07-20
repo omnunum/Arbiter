@@ -64,6 +64,7 @@ You can control me by sending these commands:
 
 *Chat Features*
 /setwelcome - greets every # users with a welcome message on chat join
+/togglejoinmsg - toggles deletion of the notification posted when users join (supergroups only)
 `
 
 func main() {
@@ -175,7 +176,12 @@ func main() {
 			fmtMsg := strings.Replace(joinedMsg, "$username", m.Sender.Username, -1)
 			B.Send(m.Chat, fmtMsg)
 		}
-
+		// delete join notification if setting is set to on
+		deleteKey := fmt.Sprintf("chat:%d:deleteJoinNotification", m.Chat.ID)
+		delete, err := R.Get(deleteKey).Int64()
+		if err == nil && delete != 0 {
+			B.Delete(m)
+		}
 	})
 
 	B.Handle(tb.OnAddedToGroup, func(m *tb.Message) {
@@ -193,6 +199,8 @@ func main() {
 		R.Set(fmt.Sprintf("chat:%d:title", m.Chat.ID), m.Chat.Title, 0)
 		// save the full chat info if we need it later
 		R.Set(fmt.Sprintf("chat:%d:info", m.Chat.ID), EncodeChat(m.Chat), 0)
+		// set user join notification deletion to off
+		R.Set(fmt.Sprintf("chat:%d:deleteJoinNotification", m.Chat.ID), 0, 0)
 		// add all chat admins to list so we can prompt user with potential
 		// options when adding and removing admins
 		if members, err := B.AdminsOf(m.Chat); err != nil {

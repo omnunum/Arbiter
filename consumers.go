@@ -15,31 +15,33 @@ import (
 type ConsumerType string
 
 const (
-	CAddAdmin      ConsumerType = "/addadmin"
-	CViewAdmins    ConsumerType = "/viewadmins"
-	CRemoveAdmin   ConsumerType = "/removeadmin"
-	CRemoveChat    ConsumerType = "/removechat"
-	CAddChat       ConsumerType = "/addchat"
-	CSwitchChat    ConsumerType = "/switchchat"
-	CAddCommand    ConsumerType = "/addcommand"
-	CRemoveCommand ConsumerType = "/removecommand"
-	CViewCommands  ConsumerType = "/viewcommands"
-	CSetWelcome    ConsumerType = "/setwelcome"
+	CAddAdmin          ConsumerType = "/addadmin"
+	CViewAdmins        ConsumerType = "/viewadmins"
+	CRemoveAdmin       ConsumerType = "/removeadmin"
+	CRemoveChat        ConsumerType = "/removechat"
+	CAddChat           ConsumerType = "/addchat"
+	CSwitchChat        ConsumerType = "/switchchat"
+	CAddCommand        ConsumerType = "/addcommand"
+	CRemoveCommand     ConsumerType = "/removecommand"
+	CViewCommands      ConsumerType = "/viewcommands"
+	CSetWelcome        ConsumerType = "/setwelcome"
+	CToggleJoinMessage ConsumerType = "/togglejoinmsg"
 )
 
 type Consumer func([]*tb.Message) (error)
 
 var ConsumerRegistry = map[ConsumerType]Consumer{
-	CAddAdmin:      addAdmin,
-	CRemoveAdmin:   removeAdmin,
-	CViewAdmins:    viewAdmins,
-	CAddChat:       addChat,
-	CSwitchChat:    switchChat,
-	CRemoveChat:    removeChat,
-	CAddCommand:    addCommand,
-	CRemoveCommand: removeCommand,
-	CViewCommands:  viewCommands,
-	CSetWelcome:	setWelcome,
+	CAddAdmin:          addAdmin,
+	CRemoveAdmin:       removeAdmin,
+	CViewAdmins:        viewAdmins,
+	CAddChat:           addChat,
+	CSwitchChat:        switchChat,
+	CRemoveChat:        removeChat,
+	CAddCommand:        addCommand,
+	CRemoveCommand:     removeCommand,
+	CViewCommands:      viewCommands,
+	CSetWelcome:        setWelcome,
+	CToggleJoinMessage: toggleJoinMessage,
 }
 
 // consts for switching basic consumer behavior
@@ -324,5 +326,26 @@ func setWelcome(ms []*tb.Message) (err error) {
 	messageKey := fmt.Sprintf("chat:%d:usersJoinedMessage", chatID)
 	err = R.Set(messageKey, message, 0).Err()
 	err = R.Set(limitKey, countInt, 0).Err()
+	return
+}
+
+func toggleJoinMessage(ms []*tb.Message) (err error) {
+	chatID, _, _ := getUsersActiveChat(ms[0].Sender.ID)
+
+	deleteMsgKey := fmt.Sprintf("chat:%d:deleteJoinNotification", chatID)
+	delete, err := R.Get(deleteMsgKey).Int64()
+	// if this hasn't been set before we're going to set it to 0 so when we
+	// toggle it the feature ends up enabled
+	if err != nil {
+		delete = 1
+	}
+	delete = delete ^ 1
+	R.Set(fmt.Sprintf("chat:%d:deleteJoinNotification", chatID), delete, 0)
+	state := "on"
+	// if delete is turned off, tell user notifications are on
+	if delete != 0 {
+		state = "off"
+	}
+	B.Send(ms[0].Sender, "User join notifications have been turned " + state)
 	return
 }

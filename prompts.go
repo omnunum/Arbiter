@@ -209,7 +209,7 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 		},
 		Consumer: CRemoveCommand,
 	}),
-	"/viewcommands": wrapSingleMessage(viewCommands),
+	"/viewcommands": wrapSingleMessage(ConsumerRegistry[CViewCommands]),
 	"/setwelcome": wrapPathBegin(Path{
 		Prompts: []Prompt{
 			{Text: `What is the message you would like to welcome your users with?
@@ -218,4 +218,5 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 		},
 		Consumer: CSetWelcome,
 	}),
+	"/togglejoinmsg": wrapSingleMessage(ConsumerRegistry[CToggleJoinMessage]),
 }
