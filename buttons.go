@@ -122,4 +122,12 @@ var ChatFunctions = []FunctionButton{
 		"Set Welcome",
 		BuiltinCommandRegistry["/setwelcome"],
 	},
+	{
+		"Add Bot to Whitelist",
+		BuiltinCommandRegistry["/addwhitelistedbot"],
+	},
+	{
+		"Remove Bot from Whitelist",
+		BuiltinCommandRegistry["/removewhitelistedbot"],
+	},
 }

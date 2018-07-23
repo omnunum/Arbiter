@@ -15,33 +15,37 @@ import (
 type ConsumerType string
 
 const (
-	CAddAdmin          ConsumerType = "/addadmin"
-	CViewAdmins        ConsumerType = "/viewadmins"
-	CRemoveAdmin       ConsumerType = "/removeadmin"
-	CRemoveChat        ConsumerType = "/removechat"
-	CAddChat           ConsumerType = "/addchat"
-	CSwitchChat        ConsumerType = "/switchchat"
-	CAddCommand        ConsumerType = "/addcommand"
-	CRemoveCommand     ConsumerType = "/removecommand"
-	CViewCommands      ConsumerType = "/viewcommands"
-	CSetWelcome        ConsumerType = "/setwelcome"
-	CToggleJoinMessage ConsumerType = "/togglejoinmsg"
+	CAddAdmin             ConsumerType = "/addadmin"
+	CViewAdmins           ConsumerType = "/viewadmins"
+	CRemoveAdmin          ConsumerType = "/removeadmin"
+	CRemoveChat           ConsumerType = "/removechat"
+	CAddChat              ConsumerType = "/addchat"
+	CSwitchChat           ConsumerType = "/switchchat"
+	CAddCommand           ConsumerType = "/addcommand"
+	CRemoveCommand        ConsumerType = "/removecommand"
+	CViewCommands         ConsumerType = "/viewcommands"
+	CSetWelcome           ConsumerType = "/setwelcome"
+	CToggleJoinMessage    ConsumerType = "/togglejoinmsg"
+	CRemoveWhitelistedBot ConsumerType = "/removewhitelistedbot"
+	CAddWhitelistedBot    ConsumerType = "/addwhitelistedbot"
 )
 
 type Consumer func([]*tb.Message) (error)
 
 var ConsumerRegistry = map[ConsumerType]Consumer{
-	CAddAdmin:          addAdmin,
-	CRemoveAdmin:       removeAdmin,
-	CViewAdmins:        viewAdmins,
-	CAddChat:           addChat,
-	CSwitchChat:        switchChat,
-	CRemoveChat:        removeChat,
-	CAddCommand:        addCommand,
-	CRemoveCommand:     removeCommand,
-	CViewCommands:      viewCommands,
-	CSetWelcome:        setWelcome,
-	CToggleJoinMessage: toggleJoinMessage,
+	CAddAdmin:             addAdmin,
+	CRemoveAdmin:          removeAdmin,
+	CViewAdmins:           viewAdmins,
+	CAddChat:              addChat,
+	CSwitchChat:           switchChat,
+	CRemoveChat:           removeChat,
+	CAddCommand:           addCommand,
+	CRemoveCommand:        removeCommand,
+	CViewCommands:         viewCommands,
+	CSetWelcome:           setWelcome,
+	CToggleJoinMessage:    toggleJoinMessage,
+	CRemoveWhitelistedBot: removeWhitelistedBot,
+	CAddWhitelistedBot:    addWhitelistedBot,
 }
 
 // consts for switching basic consumer behavior
@@ -166,7 +170,7 @@ func addCommand(ms []*tb.Message) (err error) {
 		commandName = "/" + commandName
 	}
 	commandText := ms[1].Text
-	LogI.Printf("entered addCommand with msgs [%s %s]", commandName, commandText)
+	LogI.Printf("entered with msgs [%s %s]", commandName, commandText)
 	if len(ms) == 1 {
 		B.Send(sender, fmt.Sprint(
 			"you need to specify a command and response to add, such as /addCommand commandName;response text"))
@@ -182,7 +186,7 @@ func addCommand(ms []*tb.Message) (err error) {
 
 func removeCommand(ms []*tb.Message) (err error) {
 	m := ms[0]
-	LogI.Printf("entered removeCommand with msg %s", m.Text)
+	LogI.Printf("entered with msg %s", m.Text)
 	commandName := strings.Replace(m.Text, "/removeCommand ", "", 1)
 	if ! strings.HasPrefix(commandName, "/") {
 		commandName = "/" + commandName
@@ -346,6 +350,27 @@ func toggleJoinMessage(ms []*tb.Message) (err error) {
 	if delete != 0 {
 		state = "off"
 	}
-	B.Send(ms[0].Sender, "User join notifications have been turned " + state)
+	B.Send(ms[0].Sender, "User join notifications have been turned "+state)
+	return
+}
+
+func addWhitelistedBot(ms []*tb.Message) (err error) {
+	chatID, _, err := getUsersActiveChat(ms[0].Sender.ID)
+	botName := ms[0].Text
+	if !strings.HasSuffix(strings.ToLower(botName), "bot") {
+		B.Send(ms[0].Sender, botName+" is not a bot")
+		return
+	}
+	err = R.SAdd(fmt.Sprintf("chat:%d:botWhitelist", chatID), botName).Err()
+	B.Send(ms[0].Sender, botName+" has been added to the whitelist")
+	B.Unban(&tb.Chat{ID: int64(chatID)}, &tb.User{Username: botName})
+	return
+}
+
+func removeWhitelistedBot(ms []*tb.Message) (err error) {
+	chatID, _, err := getUsersActiveChat(ms[0].Sender.ID)
+	botName := ms[0].Text
+	err = R.SRem(fmt.Sprintf("chat:%d:botWhitelist", chatID), botName, 0).Err()
+	B.Send(ms[0].Sender, botName+" has been removed from the whitelist")
 	return
 }

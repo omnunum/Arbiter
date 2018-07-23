@@ -65,7 +65,8 @@ You can control me by sending these commands:
 *Chat Features*
 /setwelcome - greets every # users with a welcome message on chat join
 /togglejoinmsg - toggles deletion of the notification posted when users join (supergroups only)
-`
+/addwhitelistedbot - adds a bot (by username) to be allowed to join a chat
+/removewhitelistedbot - removes a bots ability to join a chat`
 
 func main() {
 	gob.Register(Path{})
@@ -166,6 +167,22 @@ func main() {
 	})
 
 	B.Handle(tb.OnUserJoined, func(m *tb.Message) {
+		// kick bot if not whitelisted
+		k := fmt.Sprintf("chat:%d:botWhitelist", m.Chat.ID)
+		for _, u := range m.UsersJoined {
+			// we only need to lookup users that are bots
+			if !strings.HasSuffix(strings.ToLower(u.Username),"bot") {
+				continue
+			}
+			// for all bots, ban if not member or if whitelist was never set up
+			isMember, err := R.SIsMember(k, u.Username).Result()
+			if err != nil || !isMember {
+				B.Ban(m.Chat, &tb.ChatMember{User: &u, RestrictedUntil: tb.Forever()})
+				B.Send(m.Chat, "fuck ur bot")
+			}
+		}
+
+		// post welcome message if available
 		countKey := fmt.Sprintf("chat:%d:usersJoinedCount", m.Chat.ID)
 		limitKey := fmt.Sprintf("chat:%d:usersJoinedLimit", m.Chat.ID)
 		messageKey := fmt.Sprintf("chat:%d:usersJoinedMessage", m.Chat.ID)

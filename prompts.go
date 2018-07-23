@@ -12,10 +12,11 @@ import (
 type GeneratorType string
 
 const (
-	GSwitchChat GeneratorType = "SwitchChatGenerator"
-	GAddAdmin GeneratorType = "AddAdminGenerator"
-	GRemoveAdmin GeneratorType = "RemoveAdminGenerator"
-	GRemoveChat GeneratorType = "RemoveChatGenerator"
+	GSwitchChat         GeneratorType = "SwitchChatGenerator"
+	GAddAdmin           GeneratorType = "AddAdminGenerator"
+	GRemoveAdmin        GeneratorType = "RemoveAdminGenerator"
+	GRemoveChat         GeneratorType = "RemoveChatGenerator"
+	GRemoveBotGenerator GeneratorType = "RemoveBotGenerator"
 )
 
 // a generator takes a message and a prompt, uses the messaage
@@ -24,10 +25,11 @@ const (
 type Generator func(*tb.Message, *Prompt)
 
 var GeneratorRegistry = map[GeneratorType]Generator{
-	GSwitchChat: SwitchChatGenerator,
-	GRemoveChat: RemoveChatGenerator,
-	GAddAdmin: AddAdminGenerator,
-	GRemoveAdmin: RemoveAdminGenerator,
+	GSwitchChat:         SwitchChatGenerator,
+	GRemoveChat:         RemoveChatGenerator,
+	GAddAdmin:           AddAdminGenerator,
+	GRemoveAdmin:        RemoveAdminGenerator,
+	GRemoveBotGenerator: RemoveBotGenerator,
 }
 
 func SwitchChatGenerator(m *tb.Message, pr *Prompt) {
@@ -46,6 +48,60 @@ func RemoveAdminGenerator(m *tb.Message, pr *Prompt) {
 	AdminSubGenerator(m, pr, CRemoveAdmin)
 }
 
+func RemoveBotGenerator(m *tb.Message, pr *Prompt) {
+	userID := m.Sender.ID
+	chatID, _, err := getUsersActiveChat(userID)
+	if err != nil {
+		LogE.Printf("unable to get activeChat: %s", err)
+	}
+	k := fmt.Sprintf("chat:%d:botWhitelist", chatID)
+	botNames, err := R.SMembers(k).Result()
+	if err != nil {
+		LogE.Printf("couldn't get bot whitelist for chat %s: %s", userID, err)
+		pr = &ErrorPrompt
+		return
+	}
+	// build keyboard for chat selection
+	keys := [][]tb.ReplyButton{}
+	buttonsPerRow := 3
+	totalCount := len(botNames)
+	// three buttons per row
+	nRows := totalCount / buttonsPerRow
+	// add another row if we have some leftovers to form an incomplete row\
+	remainderButtonCount := totalCount % buttonsPerRow
+	if remainderButtonCount > 0 {
+		nRows += 1
+	}
+	var buttonsThisRow int
+	for nR := 0; nR < nRows; nR += 1 {
+		row := []tb.ReplyButton{}
+		// if last row
+		if nR == nRows-1 && remainderButtonCount > 0 {
+			buttonsThisRow = remainderButtonCount
+		} else {
+			buttonsThisRow = buttonsPerRow
+		}
+		for nB := 0; nB < buttonsThisRow; nB += 1 {
+			button := tb.ReplyButton{
+				Text: botNames[(buttonsPerRow*nR)+nB],
+			}
+			// wrap the callback so the message is in the correct format
+			B.Handle(&button, interceptMessageText("", CRemoveWhitelistedBot))
+			row = append(row, button)
+		}
+		keys = append(keys, row)
+	}
+	if totalCount == 0 {
+		pr.Text = "You don't have any whitelisted bots to remove!"
+	} else {
+		pr.Reply = tb.ReplyMarkup{
+			ReplyKeyboard:       keys,
+			ResizeReplyKeyboard: true,
+			OneTimeKeyboard:     true,
+		}
+	}
+}
+
 func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	userID := m.Sender.ID
 	chatID, _, err := getUsersActiveChat(userID)
@@ -54,7 +110,7 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	}
 	admins := []string{}
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
-	if consumer == CAddAdmin{
+	if consumer == CAddAdmin {
 		if members, err := B.AdminsOf(&tb.Chat{ID: int64(chatID)}); err != nil {
 			LogE.Printf("error fetching admins for chat %s", m.Chat.ID)
 			B.Send(m.Sender, ErrorResponse)
@@ -62,7 +118,7 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 			for _, u := range members {
 				encoded := EncodeUser(u.User)
 				R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
-					encoded,0)
+					encoded, 0)
 				R.SAdd(fmt.Sprintf("chat:%d:admins", chatID), u.User.ID)
 			}
 		}
@@ -150,10 +206,11 @@ func ChatSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	}
 }
 
-
 func interceptMessageText(msg string, consumer ConsumerType) func(m *tb.Message) {
 	return func(m *tb.Message) {
-		m.Text = msg
+		if msg != "" {
+			m.Text = msg
+		}
 		ms := []*tb.Message{m}
 		ConsumerRegistry[consumer](ms)
 	}
@@ -219,4 +276,18 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 		Consumer: CSetWelcome,
 	}),
 	"/togglejoinmsg": wrapSingleMessage(ConsumerRegistry[CToggleJoinMessage]),
+	"/addwhitelistedbot": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: "What is the username of the bot you would like to whitelist?"},
+		},
+		Consumer: CAddWhitelistedBot,
+	}),
+	"/removewhitelistedbot": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				Text:            "Which bot would you like to remove from the whitelist?",
+				GenerateMessage: GRemoveBotGenerator,
+			},
+		},
+	}),
 }
