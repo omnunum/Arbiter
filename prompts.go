@@ -1,9 +1,10 @@
 package main
 
 import (
-	tb "gopkg.in/tucnak/telebot.v2"
 	"fmt"
 	"strconv"
+
+	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 // needs to be string constant so we can encode with gob
@@ -255,8 +256,8 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 	}),
 	"/addcommand": wrapPathBegin(Path{
 		Prompts: []Prompt{
-			{Text: "What's the name of the command?",},
-			{Text: "What would you like the response to be? (Markdown formatting is supported)",},
+			{Text: "What's the name of the command?"},
+			{Text: "What would you like the response to be? (Markdown formatting is supported)"},
 		},
 		Consumer: CAddCommand,
 	}),
@@ -270,8 +271,8 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 	"/setwelcome": wrapPathBegin(Path{
 		Prompts: []Prompt{
 			{Text: `What is the message you would like to welcome your users with?
-(you can use $username to be replaced with the new members username)`,},
-			{Text: "How many users do you want to join between each welcome message?",},
+(you can use $username to be replaced with the new members username)`},
+			{Text: "How many users do you want to join between each welcome message?"},
 		},
 		Consumer: CSetWelcome,
 	}),
@@ -289,5 +290,21 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 				GenerateMessage: GRemoveBotGenerator,
 			},
 		},
+	}),
+	"/setpricecommand": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{Text: "What is the slug of your token in the URL on CoinMarketCap? \n" +
+				"(example: https://coinmarketcap.com/currencies/ethereum/",},
+			{Text: "What non-USD currency would you like to convert your token to? (pick one) \n" +
+				"(fiat options are:  AUD, BRL, CAD, CHF, CLP, CNY, CZK, DKK, EUR, GBP, " +
+				"HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PKR, " +
+				"PLN, RUB, SEK, SGD, THB, TRY, TWD, ZAR)\n" +
+				"(crypto options are: BTC, ETH, XRP, LTC, BCH)",
+			},
+			{Text: "What message would you like to display as a response to the command? \n" +
+				"(example: '{{ticker}} is trading at ${{price}} USD and Ƀ{{conversion}} BTC) /n" +
+				"(possible variables are {{ticker}}, {{name}}, {{slug}}, {{price}}, {{price_pct_change}}, {{conversion}}, {{conversion_pct_change}}"},
+		},
+		Consumer: CSetPriceCommand,
 	}),
 }

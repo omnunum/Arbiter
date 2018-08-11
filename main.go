@@ -1,17 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"text/template"
+	"time"
 	"github.com/go-redis/redis"
 	tb "gopkg.in/tucnak/telebot.v2"
-	"os"
-	"time"
-	"log"
-	"fmt"
-	"strings"
-	"encoding/gob"
-	"text/template"
-	"bytes"
-	)
+	"strconv"
+)
 
 /*
 STATE GUIDE
@@ -158,7 +159,7 @@ func main() {
 		} else {
 			var usernameList = []string{}
 			for _, u := range members {
-				usernameList = append(usernameList, "@" + u.User.Username)
+				usernameList = append(usernameList, "@"+u.User.Username)
 			}
 
 			B.Send(m.Chat, fmt.Sprintf("Hey %s %s, the admins for this channel are: %s",
@@ -166,12 +167,42 @@ func main() {
 		}
 	})
 
+	B.Handle("/price", func(m *tb.Message) {
+		if m.Private() {
+			return
+		}
+		key := fmt.Sprintf("chat:%d:price", m.Chat.ID)
+		slug, err := R.HGet(key, "slug").Result()
+		conversion, err := R.HGet(key, "conversion").Result()
+		msgFormat, err := R.HGet(key, "msgFormat").Result()
+		if err != nil {
+			B.Send(m.Chat, ErrorResponse)
+			LogE.Print(err)
+			return
+		}
+
+		token := getTokenInfo(slug)
+		price, converted, pct_price, pct_conversion := getTokenPrice(token.ID, conversion)
+		// these are all the possible tags a user can use in the message formatter
+		replacer := strings.NewReplacer(
+			"{{price}}", strconv.FormatFloat(price, 'f', 5, 64),
+			"{{ticker}}", token.Symbol,
+			"{{name}}", token.Name,
+			"{{slug}}", slug,
+			"{{conversion}}", strconv.FormatFloat(converted, 'f', 8, 64),
+			"{{price_pct_change}}", fmt.Sprintf("%+.1f%%", pct_price),
+			"{{conversion_pct_change}}", fmt.Sprintf("%+.1f%%", pct_conversion),
+		)
+		replaced := replacer.Replace(msgFormat)
+		B.Send(m.Chat, replaced)
+	})
+
 	B.Handle(tb.OnUserJoined, func(m *tb.Message) {
 		// kick bot if not whitelisted
 		k := fmt.Sprintf("chat:%d:botWhitelist", m.Chat.ID)
 		for _, u := range m.UsersJoined {
 			// we only need to lookup users that are bots
-			if !strings.HasSuffix(strings.ToLower(u.Username),"bot") {
+			if !strings.HasSuffix(strings.ToLower(u.Username), "bot") {
 				continue
 			}
 			// for all bots, ban if not member or if whitelist was never set up
@@ -188,7 +219,7 @@ func main() {
 		messageKey := fmt.Sprintf("chat:%d:usersJoinedMessage", m.Chat.ID)
 		usersJoined, _ := R.Incr(countKey).Result()
 		usersLimit, _ := R.Get(limitKey).Int64()
-		if usersJoined % usersLimit == 0 {
+		if usersJoined%usersLimit == 0 {
 			joinedMsg, _ := R.Get(messageKey).Result()
 			fmtMsg := strings.Replace(joinedMsg, "$username", m.Sender.Username, -1)
 			B.Send(m.Chat, fmtMsg)
@@ -226,7 +257,7 @@ func main() {
 		} else {
 			for _, u := range members {
 				R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
-					EncodeUser(u.User),0)
+					EncodeUser(u.User), 0)
 				R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), u.User.ID)
 			}
 		}
@@ -248,4 +279,3 @@ func main() {
 		return
 	}
 }
-

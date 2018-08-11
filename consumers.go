@@ -1,12 +1,13 @@
 package main
 
 import (
-	"strings"
 	"fmt"
-	tb "gopkg.in/tucnak/telebot.v2"
+	"strconv"
+	"strings"
+
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
-	"strconv"
+	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 // needs to be string constant so we can encode with gob
@@ -28,9 +29,10 @@ const (
 	CToggleJoinMessage    ConsumerType = "/togglejoinmsg"
 	CRemoveWhitelistedBot ConsumerType = "/removewhitelistedbot"
 	CAddWhitelistedBot    ConsumerType = "/addwhitelistedbot"
+	CSetPriceCommand      ConsumerType = "/setpricecommand"
 )
 
-type Consumer func([]*tb.Message) (error)
+type Consumer func([]*tb.Message) error
 
 var ConsumerRegistry = map[ConsumerType]Consumer{
 	CAddAdmin:             addAdmin,
@@ -46,6 +48,7 @@ var ConsumerRegistry = map[ConsumerType]Consumer{
 	CToggleJoinMessage:    toggleJoinMessage,
 	CRemoveWhitelistedBot: removeWhitelistedBot,
 	CAddWhitelistedBot:    addWhitelistedBot,
+	CSetPriceCommand:      setPriceCommand,
 }
 
 // consts for switching basic consumer behavior
@@ -55,7 +58,7 @@ const (
 	cSet
 )
 
-func getReplyKeyboardForCommands(commands []FunctionButton) ([][]tb.ReplyButton) {
+func getReplyKeyboardForCommands(commands []FunctionButton) [][]tb.ReplyButton {
 	keys := [][]tb.ReplyButton{}
 	row := []tb.ReplyButton{}
 	for _, v := range commands {
@@ -67,7 +70,7 @@ func getReplyKeyboardForCommands(commands []FunctionButton) ([][]tb.ReplyButton)
 	return keys
 }
 
-func getInlineKeyboardForCommands(commands []FunctionButton) ([][]tb.InlineButton) {
+func getInlineKeyboardForCommands(commands []FunctionButton) [][]tb.InlineButton {
 	keys := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}
 	for _, v := range commands {
@@ -79,7 +82,7 @@ func getInlineKeyboardForCommands(commands []FunctionButton) ([][]tb.InlineButto
 	return keys
 }
 
-func getInlineButtonForMessages(buttonTexts []string) ([][]tb.InlineButton) {
+func getInlineButtonForMessages(buttonTexts []string) [][]tb.InlineButton {
 	keys := [][]tb.InlineButton{}
 	row := []tb.InlineButton{}
 	for _, t := range buttonTexts {
@@ -93,7 +96,7 @@ func getInlineButtonForMessages(buttonTexts []string) ([][]tb.InlineButton) {
 	return keys
 }
 
-func accessAdmins(userID int, operation int, adminID ... string) (msg string, err error) {
+func accessAdmins(userID int, operation int, adminID ...string) (msg string, err error) {
 	chatID, chanTitle, err := getUsersActiveChat(userID)
 	if err != nil {
 		err = errors.Wrapf(err, "couldn't get active chat")
@@ -132,7 +135,7 @@ func addAdmin(ms []*tb.Message) (err error) {
 	adminName := split[0]
 	if msg, err := accessAdmins(m.Sender.ID, cSet, adminName); err != nil {
 		B.Send(m.Sender, ErrorResponse)
-		return errors.Wrapf(err, "couldn't add admin: %s", )
+		return errors.Wrapf(err, "couldn't add admin: %s")
 	} else {
 		B.Send(m.Sender, msg)
 	}
@@ -166,7 +169,7 @@ func viewAdmins(ms []*tb.Message) (err error) {
 func addCommand(ms []*tb.Message) (err error) {
 	sender := ms[0].Sender
 	commandName := ms[0].Text
-	if ! strings.HasPrefix(commandName, "/") {
+	if !strings.HasPrefix(commandName, "/") {
 		commandName = "/" + commandName
 	}
 	commandText := ms[1].Text
@@ -188,7 +191,7 @@ func removeCommand(ms []*tb.Message) (err error) {
 	m := ms[0]
 	LogI.Printf("entered with msg %s", m.Text)
 	commandName := strings.Replace(m.Text, "/removeCommand ", "", 1)
-	if ! strings.HasPrefix(commandName, "/") {
+	if !strings.HasPrefix(commandName, "/") {
 		commandName = "/" + commandName
 	}
 	if err = unregisterStaticCommand(m.Sender.ID, commandName); err != nil {
@@ -204,7 +207,7 @@ func viewCommands(ms []*tb.Message) (err error) {
 	m := ms[0]
 	chanID, chanTitle, _ := getUsersActiveChat(m.Sender.ID)
 	key := fmt.Sprintf("chat:%d:commands", chanID)
-	val, err := R.HKeys(key).Result();
+	val, err := R.HKeys(key).Result()
 	if err != nil {
 		return errors.Wrapf(err, "could not access keys of %s", key)
 	}
@@ -372,5 +375,18 @@ func removeWhitelistedBot(ms []*tb.Message) (err error) {
 	botName := ms[0].Text
 	err = R.SRem(fmt.Sprintf("chat:%d:botWhitelist", chatID), botName, 0).Err()
 	B.Send(ms[0].Sender, botName+" has been removed from the whitelist")
+	return
+}
+
+func setPriceCommand(ms []*tb.Message) (err error) {
+	chatID, _, err := getUsersActiveChat(ms[0].Sender.ID)
+	slug, conversion, msgFormat := ms[0].Text, ms[1].Text, ms[2].Text
+
+	priceKey := fmt.Sprintf("chat:%d:price", chatID)
+	R.HSet(priceKey, "slug", slug)
+	R.HSet(priceKey, "conversion", conversion)
+	R.HSet(priceKey, "msgFormat", msgFormat)
+
+	B.Send(ms[0].Sender, "/price command has been enabled and set to report  "+slug)
 	return
 }
