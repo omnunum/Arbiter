@@ -38,6 +38,6 @@ func getTokenPrice(id int64, conversion string) (float64, float64, float64, floa
 	price, _ := jsp.GetFloat(data, "data", "quotes", "USD", "price")
 	converted, _ := jsp.GetFloat(data, "data", "quotes", conversion, "price")
 	pct_price, _ := jsp.GetFloat(data, "data", "quotes", "USD", "percent_change_24h")
-	pct_converted, _ := jsp.GetFloat(data, "data", "quotes", "USD", "percent_change_24h")
+	pct_converted, _ := jsp.GetFloat(data, "data", "quotes", conversion, "percent_change_24h")
 	return price, converted, pct_price, pct_converted
 }
