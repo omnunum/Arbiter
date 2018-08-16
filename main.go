@@ -12,6 +12,7 @@ import (
 	"github.com/go-redis/redis"
 	tb "gopkg.in/tucnak/telebot.v2"
 	"strconv"
+	"regexp"
 )
 
 /*
@@ -28,10 +29,14 @@ chat:%chatID:title <string> : name of chat
 chat:%chatID:usersJoinedCount <int> : number of users joined since beru started tracking
 chat:%chatID:usersJoinedLimit <int> : number of users joined before beru posts welcome message
 chat:%chatID:usersJoinedMessage <string> : welcome message to post
+chat:%chatID:price <MAP> : details for the price command
+	.slug <string> : the slug identifier on CMC for the token, found in the url
+	.conversion <string> : the fiat or crypto ticker symbol to act as a secondary price
+	.
+
 
 user:%userID:activechat <string> : the chat to which the commands will affect
-user:%userID:activePath <Path> : the user dialogue Path that has been started,
-	but not fully traversed
+user:%userID:activePath <Path> : the user dialogue Path that has been started, but not fully traversed
 user:%userID:chats <SET> : quick lookup to see what chats user is admin/owner of
 user:%user:info <tb.User> : user object for looking up user details
 */
@@ -67,7 +72,12 @@ You can control me by sending these commands:
 /setwelcome - greets every # users with a welcome message on chat join
 /togglejoinmsg - toggles deletion of the notification posted when users join (supergroups only)
 /addwhitelistedbot - adds a bot (by username) to be allowed to join a chat
-/removewhitelistedbot - removes a bots ability to join a chat`
+/removewhitelistedbot - removes a bots ability to join a chat
+/setpricecommand - allow beru to notify chats of a token's price
+/setnewusermediarestriction - will delete all media posts by users newer then the time specified
+`
+
+
 
 func main() {
 	gob.Register(Path{})
@@ -117,7 +127,30 @@ func main() {
 		B.Send(m.Sender, helpGuide, tb.ParseMode(tb.ModeMarkdown))
 	})
 
+	// deletes message if posted while the restriction flag still exists
+	removeMsgIfDisallowed := func(m *tb.Message) {
+		restrictionUserKey := fmt.Sprintf("chat:%d:userRestricted:%d", m.Chat.ID, m.Sender.ID)
+		exists := R.Exists(restrictionUserKey).Val()
+		if exists == 1 {
+			B.Delete(m)
+		}
+	}
+
+	B.Handle(tb.OnPhoto, func(m *tb.Message) {
+		removeMsgIfDisallowed(m)
+	})
+
+	B.Handle(tb.OnVideo, func(m *tb.Message) {
+		removeMsgIfDisallowed(m)
+	})
+
+
 	B.Handle(tb.OnText, func(m *tb.Message) {
+		matched, _ := regexp.Match(`^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$`, []byte(m.Text))
+		if matched {
+			removeMsgIfDisallowed(m)
+		}
+
 		if p := getUsersActivePath(m.Sender.ID); p != nil {
 			step(m, p)
 		}
@@ -198,6 +231,17 @@ func main() {
 	})
 
 	B.Handle(tb.OnUserJoined, func(m *tb.Message) {
+		// add user to media restriction timer
+		restrictionTimeKey := fmt.Sprintf("chat:%d:userRestrictionTime", m.Chat.ID)
+		restrictionTime, err := R.Get(restrictionTimeKey).Int64()
+		if err != nil {
+			restrictionTime = 1
+		}
+		// set the user restriction flag with a time to live of whatever was specified in the channel config
+		restrictionUserKey := fmt.Sprintf("chat:%d:userRestricted:%d", m.Chat.ID, m.Sender.ID)
+		ttl := time.Duration(restrictionTime * 1e9)
+		err = R.Set(restrictionUserKey, 0, ttl).Err()
+
 		// kick bot if not whitelisted
 		k := fmt.Sprintf("chat:%d:botWhitelist", m.Chat.ID)
 		for _, u := range m.UsersJoined {

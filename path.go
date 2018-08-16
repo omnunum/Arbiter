@@ -35,6 +35,8 @@ type Prompt struct {
 	Text string
 	// optional keyboard to send to user
 	Reply tb.ReplyMarkup
+	// optional text to send along as a keyboard
+	Buttons [][]string
 	// input from user after prompting Text/Reply
 	UserResponse *tb.Message
 	// processes UserResponse before being fed to next prompt
@@ -125,6 +127,22 @@ func step(m *tb.Message, p *Path) error {
 	// and update the saved state data with a reset TTL
 	if pr.GenerateMessage != "" {
 		GeneratorRegistry[pr.GenerateMessage](m, &pr)
+	} else if len(pr.Buttons) > 0{
+		rows := [][]tb.ReplyButton{}
+		for _, br := range(pr.Buttons) {
+			row := []tb.ReplyButton{}
+			for _, b := range(br) {
+				row = append(row, tb.ReplyButton{
+					Text: b,
+				})
+			}
+			rows = append(rows, row)
+		}
+		pr.Reply = tb.ReplyMarkup{
+			ReplyKeyboard:       rows,
+			ResizeReplyKeyboard: true,
+			OneTimeKeyboard:     true,
+		}
 	}
 	if m.Private() {
 		B.Send(m.Sender, pr.Text, &pr.Reply)

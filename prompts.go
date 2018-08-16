@@ -307,4 +307,14 @@ var BuiltinCommandRegistry = map[string]func(*tb.Message){
 		},
 		Consumer: CSetPriceCommand,
 	}),
+	"/setnewusermediarestriction": wrapPathBegin(Path{
+		Prompts: []Prompt{
+			{
+				Text: "What timescale would you like to restrict new users from posting media links?",
+				Buttons: [][]string{{"Minutes", "Hours", "Days", "Weeks"}},
+			},
+			{Text: "How many units of that timescale would you like to enforce?",},
+		},
+		Consumer: CSetNewUserRestriction,
+	}),
 }

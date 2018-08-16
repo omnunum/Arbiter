@@ -16,39 +16,41 @@ import (
 type ConsumerType string
 
 const (
-	CAddAdmin             ConsumerType = "/addadmin"
-	CViewAdmins           ConsumerType = "/viewadmins"
-	CRemoveAdmin          ConsumerType = "/removeadmin"
-	CRemoveChat           ConsumerType = "/removechat"
-	CAddChat              ConsumerType = "/addchat"
-	CSwitchChat           ConsumerType = "/switchchat"
-	CAddCommand           ConsumerType = "/addcommand"
-	CRemoveCommand        ConsumerType = "/removecommand"
-	CViewCommands         ConsumerType = "/viewcommands"
-	CSetWelcome           ConsumerType = "/setwelcome"
-	CToggleJoinMessage    ConsumerType = "/togglejoinmsg"
-	CRemoveWhitelistedBot ConsumerType = "/removewhitelistedbot"
-	CAddWhitelistedBot    ConsumerType = "/addwhitelistedbot"
-	CSetPriceCommand      ConsumerType = "/setpricecommand"
+	CAddAdmin              ConsumerType = "/addadmin"
+	CViewAdmins            ConsumerType = "/viewadmins"
+	CRemoveAdmin           ConsumerType = "/removeadmin"
+	CRemoveChat            ConsumerType = "/removechat"
+	CAddChat               ConsumerType = "/addchat"
+	CSwitchChat            ConsumerType = "/switchchat"
+	CAddCommand            ConsumerType = "/addcommand"
+	CRemoveCommand         ConsumerType = "/removecommand"
+	CViewCommands          ConsumerType = "/viewcommands"
+	CSetWelcome            ConsumerType = "/setwelcome"
+	CToggleJoinMessage     ConsumerType = "/togglejoinmsg"
+	CRemoveWhitelistedBot  ConsumerType = "/removewhitelistedbot"
+	CAddWhitelistedBot     ConsumerType = "/addwhitelistedbot"
+	CSetPriceCommand       ConsumerType = "/setpricecommand"
+	CSetNewUserRestriction ConsumerType = "/setnewusermediarestriction"
 )
 
 type Consumer func([]*tb.Message) error
 
 var ConsumerRegistry = map[ConsumerType]Consumer{
-	CAddAdmin:             addAdmin,
-	CRemoveAdmin:          removeAdmin,
-	CViewAdmins:           viewAdmins,
-	CAddChat:              addChat,
-	CSwitchChat:           switchChat,
-	CRemoveChat:           removeChat,
-	CAddCommand:           addCommand,
-	CRemoveCommand:        removeCommand,
-	CViewCommands:         viewCommands,
-	CSetWelcome:           setWelcome,
-	CToggleJoinMessage:    toggleJoinMessage,
-	CRemoveWhitelistedBot: removeWhitelistedBot,
-	CAddWhitelistedBot:    addWhitelistedBot,
-	CSetPriceCommand:      setPriceCommand,
+	CAddAdmin:              addAdmin,
+	CRemoveAdmin:           removeAdmin,
+	CViewAdmins:            viewAdmins,
+	CAddChat:               addChat,
+	CSwitchChat:            switchChat,
+	CRemoveChat:            removeChat,
+	CAddCommand:            addCommand,
+	CRemoveCommand:         removeCommand,
+	CViewCommands:          viewCommands,
+	CSetWelcome:            setWelcome,
+	CToggleJoinMessage:     toggleJoinMessage,
+	CRemoveWhitelistedBot:  removeWhitelistedBot,
+	CAddWhitelistedBot:     addWhitelistedBot,
+	CSetPriceCommand:       setPriceCommand,
+	CSetNewUserRestriction: setNewUserMediaRestriction,
 }
 
 // consts for switching basic consumer behavior
@@ -388,5 +390,38 @@ func setPriceCommand(ms []*tb.Message) (err error) {
 	R.HSet(priceKey, "msgFormat", msgFormat)
 
 	B.Send(ms[0].Sender, "/price command has been enabled and set to report  "+slug)
+	return
+}
+
+// chat owners can set an optional flag that prevents new users
+// from posting URL links, and media to the chat until the
+// restriction time has elapsed and the flag is removed from redis
+func setNewUserMediaRestriction(ms []*tb.Message) (err error) {
+	chatID, _, err := getUsersActiveChat(ms[0].Sender.ID)
+	key := fmt.Sprintf("chat:%d:userRestrictionTime", chatID)
+	sender := ms[0].Sender
+	timescale := ms[0].Text
+	timeUnits, err := strconv.ParseInt(ms[1].Text, 10, 0)
+	if err != nil {
+		LogE.Print(err)
+		B.Send(sender, ErrorResponse + "\nyou need to specify a number as the time units")
+		return
+	}
+	time := 0
+	switch timescale{
+	case "Weeks":
+		time = 7 * 24 * 60 * int(timeUnits)
+	case "Days":
+		time = 24 * 60 * int(timeUnits)
+	case "Hours":
+		time = 60 * int(timeUnits)
+	case "Minutes":
+		time = int(timeUnits)
+	default:
+		B.Send(sender, ErrorResponse + "\nYou need to specify a valid timescale (Days, Weeks, Hours, Minutes)")
+		return
+	}
+	R.Set(key, time * 60, 0)
+	B.Send(sender, fmt.Sprintf("New users restricted from posting media for %d %s", timeUnits, timescale))
 	return
 }
