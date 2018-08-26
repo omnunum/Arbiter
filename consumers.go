@@ -98,6 +98,7 @@ func getInlineButtonForMessages(buttonTexts []string) [][]tb.InlineButton {
 	return keys
 }
 
+// utility used by the set, get, and remove admin consumers
 func accessAdmins(userID int, operation int, adminID ...string) (msg string, err error) {
 	chatID, chanTitle, err := getUsersActiveChat(userID)
 	if err != nil {
@@ -125,6 +126,10 @@ func accessAdmins(userID int, operation int, adminID ...string) (msg string, err
 		err = R.SAdd(activeKey, adminID[0]).Err()
 		userChatsKey := fmt.Sprintf("user:%s:chats", adminID[0])
 		err = R.SAdd(userChatsKey, chatID).Err()
+		userActiveChatKey := fmt.Sprintf("user:%d:activeChat", adminID[0])
+		if yes, _ := R.Exists(userActiveChatKey).Result(); yes == 0 {
+			R.Set(userActiveChatKey, chatID, 0)
+		}
 		msg = fmt.Sprintf("admin added: %s", adminID[0])
 	}
 	err = errors.Wrap(err, "")

@@ -283,7 +283,7 @@ func main() {
 		R.SAdd(fmt.Sprintf("user:%d:chats", m.Sender.ID), m.Chat.ID)
 		// save the full user info if we need it later
 		R.Set(fmt.Sprintf("user:%d:info", m.Sender.ID), EncodeUser(m.Sender), 0)
-		// // add user to active chats admin list
+		// add inviter to active chats admin list
 		R.SAdd(fmt.Sprintf("chat:%d:activeAdmins", m.Chat.ID), m.Sender.ID)
 		// since this is the inviter, add this user as the owner of the chat
 		R.Set(fmt.Sprintf("chat:%d:owner", m.Chat.ID), m.Sender.ID, 0)
