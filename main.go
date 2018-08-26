@@ -55,8 +55,8 @@ You can control me by sending these commands:
 
 *Chat Owner Only*
 /addadmin - allows another user to change the chat rules
-/removeadmin - removes a users ability to change chat rules
-/viewadmins - displays list of users with admin privileges
+/removeadmin - removes a user's ability to change chat rules
+/viewadmins - displays list of users with admin privileges, refreshes the internal admin list (useful if a user has been promoted to admin after beru has joined)
 
 *Beru Level Functionality*
 /switchchat - changes which chat beru is managing when a user is an owner/admin of multiple chats
@@ -295,15 +295,8 @@ func main() {
 		R.Set(fmt.Sprintf("chat:%d:deleteJoinNotification", m.Chat.ID), 0, 0)
 		// add all chat admins to list so we can prompt user with potential
 		// options when adding and removing admins
-		if members, err := B.AdminsOf(m.Chat); err != nil {
-			LogE.Printf("error fetching admins for chat %s", m.Chat.ID)
+		if err := updateChatAdmins(int(m.Chat.ID)); err != nil {
 			B.Send(m.Sender, ErrorResponse)
-		} else {
-			for _, u := range members {
-				R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
-					EncodeUser(u.User), 0)
-				R.SAdd(fmt.Sprintf("chat:%d:admins", m.Chat.ID), u.User.ID)
-			}
 		}
 		LogI.Printf("beru joined chat %s (%d) invited by %s (%d)",
 			m.Chat.Title, m.Chat.ID, m.Sender.Username, m.Sender.ID)

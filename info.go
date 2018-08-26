@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
+	tb "gopkg.in/tucnak/telebot.v2"
 )
 
 func userHasAdminManagementAccess(userID int, chatID int) (bool, error) {
@@ -51,3 +52,17 @@ func getUserName(userID int) (string, error) {
 	}
 }
 
+func updateChatAdmins(chatID int) error {
+	if members, err := B.AdminsOf(&tb.Chat{ID: int64(chatID)}); err != nil {
+		LogE.Printf("error fetching admins for chat %s", chatID)
+		return err
+	} else {
+		for _, u := range members {
+			// update all info for chat admins in case any have changed
+			R.Set(fmt.Sprintf("user:%d:info", u.User.ID),
+				EncodeUser(u.User), 0)
+			R.SAdd(fmt.Sprintf("chat:%d:admins", chatID), u.User.ID)
+		}
+	}
+	return nil
+}

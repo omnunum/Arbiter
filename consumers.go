@@ -108,6 +108,7 @@ func accessAdmins(userID int, operation int, adminID ...string) (msg string, err
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
 	switch operation {
 	case cGet:
+		err = updateChatAdmins(chatID)
 		var val []string
 		val, err = R.SMembers(activeKey).Result()
 		usernames := []string{}
@@ -129,8 +130,10 @@ func accessAdmins(userID int, operation int, adminID ...string) (msg string, err
 		userActiveChatKey := fmt.Sprintf("user:%d:activeChat", adminID[0])
 		if yes, _ := R.Exists(userActiveChatKey).Result(); yes == 0 {
 			R.Set(userActiveChatKey, chatID, 0)
+			LogI.Printf("set activeChat for user %d to %d", adminID[0], chatID)
 		}
 		msg = fmt.Sprintf("admin added: %s", adminID[0])
+		LogI.Printf("added admin: %d to chat %d", adminID[0], chatID)
 	}
 	err = errors.Wrap(err, "")
 	return
