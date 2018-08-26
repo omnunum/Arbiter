@@ -56,7 +56,7 @@ You can control me by sending these commands:
 *Chat Owner Only*
 /addadmin - allows another user to change the chat rules
 /removeadmin - removes a user's ability to change chat rules
-/viewadmins - displays list of users with admin privileges, refreshes the internal admin list (useful if a user has been promoted to admin after beru has joined)
+/viewadmins - displays list of users with admin privileges
 
 *Beru Level Functionality*
 /switchchat - changes which chat beru is managing when a user is an owner/admin of multiple chats

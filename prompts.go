@@ -109,6 +109,8 @@ func AdminSubGenerator(m *tb.Message, pr *Prompt, consumer ConsumerType) {
 	if err != nil {
 		LogE.Printf("unable to get activeChat: %s", err)
 	}
+	// update chat admins before any action
+	err = updateChatAdmins(chatID)
 	admins := []string{}
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
 	if consumer == CAddAdmin {

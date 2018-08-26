@@ -108,7 +108,6 @@ func accessAdmins(userID int, operation int, adminID ...string) (msg string, err
 	activeKey := fmt.Sprintf("chat:%d:activeAdmins", chatID)
 	switch operation {
 	case cGet:
-		err = updateChatAdmins(chatID)
 		var val []string
 		val, err = R.SMembers(activeKey).Result()
 		usernames := []string{}
